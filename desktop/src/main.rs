@@ -185,6 +185,15 @@ fn main() -> Result<(), Error> {
 
     subscriber.init();
 
+    // Chumby host environment (chumby-pi project, hooks H5 + H8).
+    #[cfg(feature = "chumby")]
+    if let Some(fixtures) = &preferences.cli.chumby_fixtures {
+        ruffle_core::chumby::set_host(std::sync::Arc::new(
+            ruffle_core::chumby::FixtureHost::new(fixtures.clone()),
+        ));
+        ruffle_core::chumby::input::spawn(preferences.cli.chumby_control.clone());
+    }
+
     let result = App::new(preferences).and_then(|(mut app, event_loop)| {
         event_loop.run_app(&mut app).context("Event loop failure")
     });

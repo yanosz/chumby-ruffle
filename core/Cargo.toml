@@ -80,6 +80,8 @@ version = "0.4.70"
 
 [features]
 default = []
+# Chumby control panel host environment (chumby-pi project; see docs/patch-notes.md there)
+chumby = []
 lzma = ["lzma-rs", "swf/lzma"]
 avm_debug = []
 tracy_avm = ["dep:tracy-client"]

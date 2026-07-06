@@ -3177,6 +3177,28 @@ fn run_mouse_pick<'gc>(
     context: &mut UpdateContext<'gc>,
     require_button_mode: bool,
 ) -> Option<InteractiveObject<'gc>> {
+    let result = run_mouse_pick_inner(context, require_button_mode);
+    // chumby hook H9: click-target diagnostic. Silent unless RUST_LOG
+    // enables chumby_pick=debug; found the WidgetPlayer button-mode bug.
+    #[cfg(feature = "chumby")]
+    if context
+        .input
+        .is_mouse_down(crate::events::MouseButton::Left)
+    {
+        tracing::debug!(target: "chumby_pick",
+            "pick at {:?} (button_mode={require_button_mode}) -> {}",
+            *context.mouse_position,
+            result
+                .map(|o| o.as_displayobject().path().to_string())
+                .unwrap_or_else(|| "<none>".into()));
+    }
+    result
+}
+
+fn run_mouse_pick_inner<'gc>(
+    context: &mut UpdateContext<'gc>,
+    require_button_mode: bool,
+) -> Option<InteractiveObject<'gc>> {
     context.stage.iter_render_list().rev().find_map(|level| {
         level.as_interactive().and_then(|l| {
             if l.as_displayobject().movie().is_action_script_3() {

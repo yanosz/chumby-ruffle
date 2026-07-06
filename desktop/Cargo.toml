@@ -85,6 +85,7 @@ jpegxr = ["ruffle_core/jpegxr"]
 
 # core features
 avm_debug = ["ruffle_core/avm_debug"]
+chumby = ["ruffle_core/chumby"]
 lzma = ["ruffle_core/lzma"]
 software_video = ["ruffle_video_software"]
 external_video = ["ruffle_video_external"]

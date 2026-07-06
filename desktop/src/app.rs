@@ -40,6 +40,18 @@ struct MainWindow {
     time: Instant,
     next_frame_time: Option<Instant>,
     event_loop_proxy: EventLoopProxy<RuffleEvent>,
+    /// chumby hook H11: active touch being watched for a long-press
+    /// (stationary ~1 s) that stands in for the bend-sensor squeeze.
+    #[cfg(feature = "chumby")]
+    chumby_touch: Option<ChumbyTouch>,
+}
+
+#[cfg(feature = "chumby")]
+struct ChumbyTouch {
+    started: Instant,
+    start_pos: PhysicalPosition<f64>,
+    moved: bool,
+    bend_fired: bool,
 }
 
 impl MainWindow {
@@ -164,6 +176,55 @@ impl MainWindow {
                 }
                 self.check_redraw();
             }
+            // chumby hook H11: touchscreen input. Wayland touch is not a
+            // pointer, and upstream ruffle_desktop ignores WindowEvent::Touch
+            // entirely. The panel's resistive screen is single-touch, so map
+            // every touch point to left-button mouse events.
+            #[cfg(feature = "chumby")]
+            WindowEvent::Touch(touch) => {
+                use ruffle_core::events::MouseButton as RuffleMouseButton;
+                use winit::event::TouchPhase;
+                /// Finger wobble tolerated before a hold stops counting as
+                /// a long-press (window pixels).
+                const LONG_PRESS_SLOP: f64 = 12.0;
+                self.mouse_pos = touch.location;
+                let (x, y) = self.gui.window_to_movie_position(touch.location);
+                self.player.handle_event(PlayerEvent::MouseMove { x, y });
+                match touch.phase {
+                    TouchPhase::Started => {
+                        self.chumby_touch = Some(ChumbyTouch {
+                            started: Instant::now(),
+                            start_pos: touch.location,
+                            moved: false,
+                            bend_fired: false,
+                        });
+                        self.player.handle_event(PlayerEvent::MouseDown {
+                            x,
+                            y,
+                            button: RuffleMouseButton::Left,
+                            index: None,
+                        });
+                    }
+                    TouchPhase::Moved => {
+                        if let Some(state) = self.chumby_touch.as_mut() {
+                            let dx = touch.location.x - state.start_pos.x;
+                            let dy = touch.location.y - state.start_pos.y;
+                            if dx * dx + dy * dy > LONG_PRESS_SLOP * LONG_PRESS_SLOP {
+                                state.moved = true;
+                            }
+                        }
+                    }
+                    TouchPhase::Ended | TouchPhase::Cancelled => {
+                        self.chumby_touch = None;
+                        self.player.handle_event(PlayerEvent::MouseUp {
+                            x,
+                            y,
+                            button: RuffleMouseButton::Left,
+                        });
+                    }
+                }
+                self.check_redraw();
+            }
             WindowEvent::MouseWheel { delta, .. } => {
                 if self.gui.is_context_menu_visible() {
                     return;
@@ -200,6 +261,13 @@ impl MainWindow {
             WindowEvent::KeyboardInput { event, .. } => {
                 if self.gui.is_context_menu_visible() {
                     return;
+                }
+
+                // chumby hook H7: Home plays the bend sensor (squeeze
+                // button); chumby's own falconwing port used the same key.
+                #[cfg(feature = "chumby")]
+                if event.logical_key == Key::Named(NamedKey::Home) {
+                    ruffle_core::chumby::set_bent(event.state == ElementState::Pressed);
                 }
 
                 // Handle escaping from fullscreen.
@@ -367,6 +435,51 @@ impl MainWindow {
                 }
                 _ => {}
             }
+        }
+
+        // chumby hook H11 (cont.): a touch held stationary for ~1 s acts as
+        // the bend-sensor squeeze (toggles the control panel). Checked here
+        // because a resting finger produces no further touch events.
+        #[cfg(feature = "chumby")]
+        if let Some(state) = self.chumby_touch.as_mut() {
+            if !state.bend_fired
+                && !state.moved
+                && state.started.elapsed() >= std::time::Duration::from_millis(1000)
+            {
+                state.bend_fired = true;
+                ruffle_core::chumby::host::tap_bend();
+            }
+        }
+
+        // chumby hook H10: simulated pointer input from the control channel
+        // (`click X Y` / `drag X1 Y1 X2 Y2` in window pixels — matches grim
+        // screenshots). One action per iteration so widgets that track the
+        // pointer across frames (sliders) see a natural sequence.
+        #[cfg(feature = "chumby")]
+        if let Some(action) = ruffle_core::chumby::take_pointer() {
+            use ruffle_core::chumby::PointerAction;
+            use ruffle_core::events::MouseButton as RuffleMouseButton;
+            let button = RuffleMouseButton::Left;
+            let ((wx, wy), down, up) = match action {
+                PointerAction::Move(x, y) => ((x, y), false, false),
+                PointerAction::Down(x, y) => ((x, y), true, false),
+                PointerAction::Up(x, y) => ((x, y), false, true),
+            };
+            let (x, y) = self
+                .gui
+                .window_to_movie_position(winit::dpi::PhysicalPosition::new(wx, wy));
+            self.player.handle_event(PlayerEvent::MouseMove { x, y });
+            if down {
+                self.player.handle_event(PlayerEvent::MouseDown {
+                    x,
+                    y,
+                    button,
+                    index: None,
+                });
+            } else if up {
+                self.player.handle_event(PlayerEvent::MouseUp { x, y, button });
+            }
+            self.check_redraw();
         }
 
         // Core loop
@@ -548,6 +661,8 @@ impl ApplicationHandler<RuffleEvent> for App {
                 time: Instant::now(),
                 next_frame_time: None,
                 event_loop_proxy,
+                #[cfg(feature = "chumby")]
+                chumby_touch: None,
             });
         }
     }
