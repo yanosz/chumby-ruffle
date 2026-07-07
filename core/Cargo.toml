@@ -42,6 +42,8 @@ encoding_rs = { workspace = true }
 rand = { version = "0.9.1", features = ["std", "os_rng"], default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true, features = ["preserve_order"] }
+# chumby: ui-policy.toml parsing (chumby module); workspace-pinned version
+toml = { workspace = true }
 nellymoser-rs = { git = "https://github.com/ruffle-rs/nellymoser", rev = "073eb48d907201f46dea0c8feb4e8d9a1d92208c", optional = true }
 regress = { workspace = true }
 flash-lso = { git = "https://github.com/ruffle-rs/rust-flash-lso", rev = "61b717248aae853a4f5d8a103eba704268d286c8" }
@@ -77,6 +79,10 @@ workspace = true
 
 [target.'cfg(target_family = "wasm")'.dependencies.wasm-bindgen-futures]
 version = "0.4.70"
+
+# chumby: getifaddrs for RealNetHost's interface IP/netmask (Linux/Pi).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [features]
 default = []

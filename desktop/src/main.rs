@@ -185,6 +185,18 @@ fn main() -> Result<(), Error> {
 
     subscriber.init();
 
+    // Chumby host environment (chumby-pi project).
+    if let Some(fixtures) = &preferences.cli.chumby_fixtures {
+        // RealNetHost answers the network exec touchpoints from the live
+        // interface and falls back to these fixtures when nothing is connected.
+        let fixture_host = ruffle_core::chumby::FixtureHost::new(fixtures.clone());
+        ruffle_core::chumby::set_host(std::sync::Arc::new(
+            ruffle_core::chumby::RealNetHost::new(fixture_host),
+        ));
+        ruffle_core::chumby::ui_policy::load(fixtures);
+        ruffle_core::chumby::input::spawn(preferences.cli.chumby_control.clone());
+    }
+
     let result = App::new(preferences).and_then(|(mut app, event_loop)| {
         event_loop.run_app(&mut app).context("Event loop failure")
     });
