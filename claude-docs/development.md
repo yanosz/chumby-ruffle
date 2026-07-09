@@ -33,9 +33,15 @@ gh pr create --repo yanosz/chumby-ruffle --base chumby --head <branch> \
 (`/home/jan/chumby-ruffle`), not GitHub, so a bare `git push origin` or
 `gh pr create` targets the wrong place. Push to the GitHub URL explicitly.
 
-The PR is also the acceptance gate: `chumby.yml` triggers on pull requests
-against `chumby`, so the movie-start check runs on the branch before it
-lands. A session branch on its own gets no CI.
+`chumby.yml` runs on the PR, but **on a pull request it only builds.**
+Starting the movie needs `controlpanel.swf`, which is copyrighted and lives
+on a private share, so the movie-start check runs on push to `chumby` — that
+is, after the squash-merge — and on manual dispatch. A PR proves it compiles;
+`chumby` proves it runs.
+
+The consequence is that CI cannot catch a dead ASnative hook before a merge.
+Run the movie-start check locally before opening the PR (§5); that is now the
+only pre-merge gate there is.
 
 The fork's default branch tracks upstream Ruffle with the chumby work
 applied on top. When the pin in chumby-pi moves, the submodule gitlink in
@@ -230,13 +236,14 @@ line. Audio-device failure on a headless machine is expected and non-fatal.
 that renders disabled but still fires, or a widget that loads but never
 paints.
 
-CI (`.github/workflows/chumby.yml`) runs build + movie-start on every push
-and PR to `chumby`. Fixtures are in-repo; only `controlpanel.swf` is fetched,
-by rclone from a private share configured entirely through
-`RCLONE_CONFIG_RSHARE_*` secrets. The SWF is never committed, cached, or
-uploaded anywhere. The tracked fixture tree lacks the gitignored widget
-SWFs; the panel boots without them (the widget load fails with a non-fatal
-`FetchError`), which is what makes this work.
+CI (`.github/workflows/chumby.yml`) builds on every push and PR to `chumby`,
+and additionally runs the movie-start check on push and manual dispatch —
+never on a PR, because that step needs the SWF (§1). Fixtures are in-repo;
+only `controlpanel.swf` is fetched, by rclone from a private share configured
+entirely through `RCLONE_CONFIG_RSHARE_*` secrets. The SWF is never
+committed, cached, or uploaded anywhere. The tracked fixture tree lacks the
+gitignored widget SWFs; the panel boots without them (the widget load fails
+with a non-fatal `FetchError`), which is what makes this work.
 
 Inherited upstream workflows are left untouched (they filter on `master`, or
 guard on the upstream repository name) so that future upstream merges stay

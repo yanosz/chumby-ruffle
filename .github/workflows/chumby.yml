@@ -26,9 +26,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# On a pull request the job builds and stops there. Starting the movie needs
+# controlpanel.swf, which is copyrighted and lives on a private share — so the
+# full check runs on push to `chumby` (i.e. after the squash-merge) and on
+# manual dispatch. A PR proves it compiles; `chumby` proves it runs.
+
 jobs:
   start-movie:
-    name: Build and start controlpanel.swf
+    name: Build (and, off pull requests, start controlpanel.swf)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -50,6 +55,7 @@ jobs:
 
       # Only URL/USER/PASS are secrets; type and vendor reveal nothing.
       - name: Fetch controlpanel.swf from the private share
+        if: github.event_name != 'pull_request'
         env:
           RCLONE_CONFIG_RSHARE_TYPE: webdav
           RCLONE_CONFIG_RSHARE_VENDOR: nextcloud
@@ -61,6 +67,7 @@ jobs:
           test -f swf-assets/controlpanel.swf
 
       - name: Start the movie headless
+        if: github.event_name != 'pull_request'
         env:
           RUST_LOG: warn,chumby_host=info,avm_trace=info
         run: |
@@ -79,6 +86,7 @@ jobs:
           test "$status" -eq 124
 
       - name: Assert the panel executed chumby host calls
+        if: github.event_name != 'pull_request'
         run: |
           grep -q '_getPlatform' run.log
           if grep -q 'panicked' run.log; then
