@@ -86,6 +86,28 @@ Paths in fixture data may contain a `{FIXTURES}` token, expanded to the
 absolute fixtures directory at serve time. That is what lets the same
 profile XML name widget SWFs on both the dev box and the Pi.
 
+The fixture rootfs is **read-write** — all of the panel's persistence
+(`/psp/alarms`, `/psp/volume`, `/psp/url_streams`, `/psp/clock_format`)
+lands there. A desktop run therefore mutates `fixtures/rootfs/`; check
+`git status` before concluding a fixture changed by itself.
+
+### The widget channel
+
+Real chumby fetched its channel — a list of widget instances — from
+chumby.com. We generate one from the widgets we ship. Each widget carries a
+`*.widget.xml` sidecar next to its SWF holding exactly the `<widget>`
+element the panel consumes (name, description, version, mode, access,
+`<movie href>`, optional `<thumbnail href>`); `chumby-widget-channel`
+wraps them in the `<widget_instance>`/`<profile>` envelope and writes
+`fixtures/http/xml.chumby.com/xml/profiles`. The panel reads only the named
+nodes it knows and ignores the rest, so the schema is loose and
+forward-compatible. `file://` hrefs are accepted for movies and thumbnails.
+
+The dashboard preview is a static JPEG per widget, `loadMovie`'d from the
+`<thumbnail href>` — `loadMovie` decodes an image as readily as a SWF, so
+this needs no second live render, which is what makes it compatible with
+the localCache path (§6).
+
 ### RealNetHost
 
 A decorator, not a sibling: it wraps `FixtureHost`, overrides the network

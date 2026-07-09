@@ -118,22 +118,32 @@ header comment of `ui_policy.rs` and `claude-docs/design.md` §5.
 cargo build -p ruffle_desktop
 ```
 
-Run it against the chumby-pi fixtures:
+`controlpanel.swf` is copyrighted chumby firmware and is not distributed
+here — take it from your own chumby (or a backup of one) and put it in
+`swf-assets/`. Then:
+
+```sh
+./run-controlpanel.sh
+```
+
+which wraps:
 
 ```sh
 target/debug/ruffle_desktop \
   --load-behavior blocking \
   --filesystem-access-mode allow \
-  --chumby-fixtures <chumby-pi>/fixtures \
+  --chumby-fixtures fixtures \
   --chumby-control /tmp/chumby-ctl \
   -PlocalCache=1 \
-  controlpanel.swf
+  swf-assets/controlpanel.swf
 ```
 
-chumby-pi's `run-controlpanel.sh` wraps all of this. `controlpanel.swf`
-is copyrighted chumby firmware and is not distributed here. Useful log
-targets: `chumby_host` (all environment traffic), `chumby_audio`, and
-`chumby_pick` (a click-target diagnostic).
+The `fixtures/` tree in this repo is the virtual chumby: the panel's
+filesystem, the canned output of the commands it runs, and the chumby.com
+responses it expects. `chumby-ctl bend` squeezes the (virtual) bend sensor
+to summon the control-panel bar. Useful log targets: `chumby_host` (all
+environment traffic), `chumby_audio`, and `chumby_pick` (a click-target
+diagnostic).
 
 ## Keeping up with upstream
 

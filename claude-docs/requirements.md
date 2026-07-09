@@ -341,6 +341,7 @@ Carried forward, in the order they are expected to land.
 
 | Gap | Note |
 |-----|------|
+| Geek + intro buttons still live | The Info screen's `piButton` (the "π" geek trigger, `frame_2` ~27145) and `introButton` were recorded as disabled but no such rules were ever written. Geek is reachable, and the intro button cannot do anything on the localCache path. Two `disable` rules are owed. |
 | Network type hardcoded (FR10) | `real_net.rs` reports constant `type="lan"` and constant full signal; the ethernet tint is a static rule. Must derive from `/sys/class/net/<if>/wireless/`; wifi SSID needs nl80211 (sysfs has none), signal comes from `/proc/net/wireless`. |
 | Static-field audit (FR10) | Sweep the whole `network_status.sh` + `signal_strength` output for any other value that is not read from live state. |
 | `_getDirectoryEntry` (5,320) | `RootFs::dir_entry` exists; the native still stubs "end of listing". Needed for USB/local-file music browsing. |

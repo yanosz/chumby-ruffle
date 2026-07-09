@@ -1,9 +1,10 @@
 # Development
 
-How to build, run, verify, and evolve this fork. Deployment of the finished
-player onto hardware is not covered here — that belongs to
+How to build, run, verify, and evolve this fork. Everything player work
+needs is in this repository. Deployment onto hardware is not covered here —
+Debian packaging, the Raspberry Pi kiosk and the setup howto belong to
 [chumby-pi](https://github.com/yanosz/chumby-pi), which pins this repo as a
-submodule and owns the packaging, the kiosk, and the fixture data.
+submodule.
 
 Concepts: [design.md](design.md). What the player owes the panel:
 [requirements.md](requirements.md). The public overview and the
@@ -44,6 +45,19 @@ Upstream files carry registration hooks only. Every hook site has a comment
 containing the word `chumby`, so `grep -rn chumby <file>` finds what to
 re-apply after a rebase. The full list is in [design.md](design.md) §8.
 
+Around the fork, at the repo root:
+
+| path | role |
+|------|------|
+| `fixtures/` | what the panel is answered with — `rootfs/`, `exec/`, `http/`, `widgets/` |
+| `swf-assets/` | `controlpanel.swf` goes here; self-ignoring, you supply it |
+| `run-controlpanel.sh` | the desktop run |
+| `chumby-ctl` | writes bend/click/drag to the player's control FIFO |
+| `verify-screens.sh` | drives the panel to named screens and screenshots them |
+| `chumby-widget-channel` | regenerates the widget-channel profile fixture |
+| `claude-docs/appendix/` | the ffdec export of the panel — gitignored, ~36 MB, **the law** |
+| `claude-docs/images/` | panel screenshots — gitignored (chumby artwork) |
+
 ## 3. Build
 
 ```sh
@@ -61,20 +75,24 @@ incremental rebuild.
 
 Cross-compiling for the Pi (aarch64) is driven from the chumby-pi tree,
 whose `.cargo/config.toml` sets the linker and `PKG_CONFIG_*` — deliberately
-kept *outside* this repo so the fork stays upstream-clean:
-
-```sh
-cargo build --profile dist -p ruffle_desktop --target aarch64-unknown-linux-gnu
-```
+kept *outside* this repo so the fork stays upstream-clean. You do not need
+it for player work.
 
 Upstream Ruffle needs a JVM at build time (it compiles its ActionScript
 stdlib with Adobe's `asc.jar`), on the build host only.
 
 ## 4. Run
 
-The player needs the panel SWF and a fixtures directory, neither of which
-lives here (both are chumby-pi's). From a chumby-pi checkout,
-`run-controlpanel.sh` wraps this:
+`controlpanel.swf` is copyrighted chumby firmware and is not in the repo.
+Obtain it from your own chumby (or its backup) and drop it in
+`swf-assets/`, then:
+
+```sh
+cargo build -p ruffle_desktop
+./run-controlpanel.sh                 # extra args pass through to ruffle
+```
+
+which is a wrapper around:
 
 ```sh
 ruffle_desktop \
@@ -83,7 +101,7 @@ ruffle_desktop \
     --chumby-fixtures fixtures/ \
     --chumby-control /tmp/chumby-ctl \
     -PlocalCache=1 \
-    controlpanel.swf
+    swf-assets/controlpanel.swf
 ```
 
 `-Pbuiltin=1` additionally takes the offline boot path (no authorize round
@@ -98,13 +116,46 @@ RUST_LOG=warn,chumby_pick=debug         # what a click actually hit
 `chumby_pick=debug` is the tool for UI-policy work: a missed click and an
 inert control look identical without it.
 
-Drive the panel from a script through the FIFO:
+Drive the panel from a script through the FIFO (`./chumby-ctl bend` is the
+same thing). The FIFO must be a real FIFO — `echo >` to a missing path
+creates a regular file and the player disables the channel:
 
 ```sh
 echo bend            > /tmp/chumby-ctl   # summon/dismiss the button bar
 echo "click 448 458" > /tmp/chumby-ctl
 echo "drag 100 200 300 200" > /tmp/chumby-ctl
 ```
+
+`./verify-screens.sh` walks the panel to the alarms, My Streams and volume
+screens and screenshots each into `claude-docs/images/`.
+
+## 4a. The decompiled panel
+
+`claude-docs/appendix/` holds the ffdec export of `controlpanel.swf`
+2.8.87b3 — scripts, frame labels, sprite renders, the tag dump. It is
+gitignored (copyrighted, ~36 MB) and is the ground truth for every claim
+about what a screen contains, which is why `F2:<line>` references in
+requirements.md and design.md point into
+`appendix/controlpanel-2.8.87b3/scripts/frame_2/DoAction.as`.
+
+Regenerate it with:
+
+```sh
+ffdec -export script,frame,image,shape claude-docs/appendix/controlpanel-2.8.87b3 \
+      swf-assets/controlpanel.swf
+```
+
+Instance names and depths — what UI-policy selectors are built from — come
+from the XML dump (`ffdec -swf2xml`), not from the script export.
+
+## 4b. Regenerating the widget channel
+
+`fixtures/http/xml.chumby.com/xml/profiles` is generated, not hand-written.
+Each widget carries a `*.widget.xml` sidecar next to its SWF in
+`fixtures/widgets/`; `./chumby-widget-channel` enumerates them and emits the
+profile plus the two `/tmp/currentProfile*` files. It skips the rewrite when
+the sidecar set is unchanged (`--force` overrides). A committed profile
+ships in the tree, so a debug run never needs to regenerate first.
 
 ## 5. Verify
 
@@ -129,11 +180,16 @@ that renders disabled but still fires, or a widget that loads but never
 paints.
 
 CI (`.github/workflows/chumby.yml`) runs build + movie-start on every push
-and PR to `chumby`. It fetches `controlpanel.swf` and a fixtures tarball
-from a private share — the SWF is copyrighted and is never committed,
-cached, or uploaded anywhere. Inherited upstream workflows are left
-untouched (they filter on `master`, or guard on the upstream repository
-name) so that future upstream merges stay conflict-free.
+and PR to `chumby`. Fixtures are in-repo; only `controlpanel.swf` is fetched,
+by rclone from a private share configured entirely through
+`RCLONE_CONFIG_RSHARE_*` secrets. The SWF is never committed, cached, or
+uploaded anywhere. The tracked fixture tree lacks the gitignored widget
+SWFs; the panel boots without them (the widget load fails with a non-fatal
+`FetchError`), which is what makes this work.
+
+Inherited upstream workflows are left untouched (they filter on `master`, or
+guard on the upstream repository name) so that future upstream merges stay
+conflict-free.
 
 ## 6. Merging upstream
 

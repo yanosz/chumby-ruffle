@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<profile id="1">
+  <name>chumbypi-channel</name>
+  <description/>
+  <user username="jan">
+    <profiles>
+      <profile unaccepted="0" name="chumbypi-channel" id="1"/>
+    </profiles>
+  </user>
+  <access access="private" id="1"/>
+  <widget_instances>
+    <widget_instance id="1">
+      <name>Unsubscribed Clock</name>
+      <widget id="1">
+        <name>Unsubscribed Clock</name>
+        <description>The clock displayed to unsubscribed users (chumby.com guide F1899D99-EDF7-3F38-A161-E6F3C89499E5)</description>
+        <version>1.0</version>
+        <mode mode="timeout" time="86400"/>
+        <access sendable="false" deleteable="false" access="private" virtualable="false"/>
+        <user username="jan"/>
+        <movie href="file:///{FIXTURES}/widgets/unsubscribedclock.swf" contenttype="application/x-shockwave-flash"/>
+        <thumbnail href="file:///{FIXTURES}/widgets/unsubscribedclock.jpg" contenttype="image/jpeg"/>
+      </widget>
+      <access access="private"/>
+      <mode mode="timeout" time="86400"/>
+      <widget_parameters/>
+    </widget_instance>
+    <widget_instance id="2">
+      <name>Clock</name>
+      <widget id="2">
+        <name>Clock</name>
+        <description>Built-in chumby clock</description>
+        <version>1.0</version>
+        <mode mode="timeout" time="86400"/>
+        <access sendable="false" deleteable="false" access="private" virtualable="false"/>
+        <user username="jan"/>
+        <movie href="file:///{FIXTURES}/widgets/builtinclock.swf" contenttype="application/x-shockwave-flash"/>
+        <thumbnail href="file:///{FIXTURES}/widgets/builtinclock.jpg" contenttype="image/jpeg"/>
+      </widget>
+      <access access="private"/>
+      <mode mode="timeout" time="86400"/>
+      <widget_parameters/>
+    </widget_instance>
+  </widget_instances>
+</profile>
