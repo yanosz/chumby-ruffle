@@ -15,10 +15,23 @@ Concepts: [design.md](design.md). What the player owes the panel:
 ## 1. Branch and commit policy
 
 **One feature branch per working session, squashed on merge.** Branch from
-the fork's default branch (`chumby`), do the session's work in as many
-commits as are useful, and open a pull request; Jan merges it with GitHub's
-**Squash and merge**. Do not amend and force-push a long-lived shared commit
-— that was the old discipline and it is retired.
+the fork's default branch (`chumby`) and do the session's work in as many
+commits as are useful. Do not amend and force-push a long-lived shared
+commit — that was the old discipline and it is retired.
+
+**Finishing a session means opening the pull request.** Push the branch and
+create the PR yourself; Jan reviews and merges it with GitHub's *Squash and
+merge*. Leaving a pushed branch with no PR is an unfinished session.
+
+```sh
+git push -u origin <branch>
+gh pr create --repo yanosz/chumby-ruffle --base chumby --head <branch> \
+    --title "…" --body "…"
+```
+
+`--repo` is not optional: this checkout's `origin` is a local clone
+(`/home/jan/chumby-ruffle`), not GitHub, so a bare `git push origin` or
+`gh pr create` targets the wrong place. Push to the GitHub URL explicitly.
 
 The PR is also the acceptance gate: `chumby.yml` triggers on pull requests
 against `chumby`, so the movie-start check runs on the branch before it

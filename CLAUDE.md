@@ -41,9 +41,12 @@ Non-negotiable rules:
   and say what it is.
 - Keep code comments brief. Comment only what the code cannot say: the
   why, a non-obvious constraint, a reference. Do not narrate the obvious.
-- One feature branch per working session; it lands as a pull request against
-  `chumby`, merged with GitHub's Squash and merge. Opening the PR is what
-  runs CI. Merging is the user's call.
+- One feature branch per working session. **Finishing the session means
+  pushing it and opening the pull request** against `chumby` — do that
+  yourself; leaving a pushed branch with no PR is unfinished work. Opening
+  the PR is what runs CI. Jan reviews and squash-merges. Note this
+  checkout's `origin` is a local clone, not GitHub: push to the GitHub URL
+  and pass `--repo yanosz/chumby-ruffle` to `gh`.
 - Ask before iterating. When scope is ambiguous, one clarifying question
   beats an exploratory detour. A question from the user is a question, not
   an instruction to start coding.
