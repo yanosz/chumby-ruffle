@@ -52,7 +52,7 @@ jobs:
       # Fixtures come from the same share (fixtures.tar.gz, a tracked-
       # files-only `git archive` of the private chumby-pi repo's
       # fixtures/ tree — re-upload after fixture changes, see chumby-pi
-      # claude-docs/reference/15-ci.md §5). This keeps the workflow off
+      # claude-docs/development.md). This keeps the workflow off
       # GitHub cross-repo tokens entirely. Only URL/USER/PASS are
       # secrets; type and vendor reveal nothing.
       - name: Fetch controlpanel.swf and fixtures from the private share

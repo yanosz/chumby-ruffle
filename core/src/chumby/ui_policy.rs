@@ -2,9 +2,8 @@
 //! not support, without touching the SWF.
 //!
 //! Loaded from `<fixtures>/ui-policy.toml` (rules are data, shipped with the
-//! fixtures; see the chumby-pi repo's `fixtures/ui-policy.toml` and
-//! `claude-docs/reference/18-clock-screen-and-ui-policy.md` for the catalog
-//! and the CHECKPOINT UI1 decisions). Applied from `avm::method` on every
+//! fixtures; see the chumby-pi repo's `fixtures/ui-policy.toml` for the rules
+//! and `claude-docs/design.md` §5 for the mechanism). Applied from `avm::method` on every
 //! chumby native call — the panel polls `_bent` (5,25) once per frame, so
 //! this re-applies at frame cadence and survives SWF-side re-inits; the walk
 //! is a handful of child lookups per rule and costs nothing measurable.

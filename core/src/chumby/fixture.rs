@@ -1,6 +1,6 @@
 //! `FixtureHost`: answers every host category from a fixtures directory.
 //!
-//! Layout (chumby-pi project, `claude-docs/design/chumby-host.md` §5):
+//! Layout (the tree lives in the chumby-pi project; see `claude-docs/design.md` §2):
 //! ```text
 //! fixtures/
 //!   rootfs/    virtual filesystem for the fs category (paths map 1:1)
