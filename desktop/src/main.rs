@@ -193,7 +193,6 @@ fn main() -> Result<(), Error> {
         ruffle_core::chumby::set_host(std::sync::Arc::new(
             ruffle_core::chumby::RealNetHost::new(fixture_host),
         ));
-        ruffle_core::chumby::ui_policy::load(fixtures);
         ruffle_core::chumby::input::spawn(preferences.cli.chumby_control.clone());
     }
 

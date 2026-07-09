@@ -46,8 +46,15 @@ All chumby code lives in `core/src/chumby/`:
 | `ui_policy.rs` | dims and disables panel controls the host platform can't support |
 
 Everything else is a handful of small registration hooks in upstream
-files (grep for `chumby`). chumby-pi's `claude-docs/patch-notes.md` lists
-them and is the guide for rebasing onto new upstream releases.
+files (grep for `chumby`). `claude-docs/design.md` §8 lists them and is
+the guide for rebasing onto new upstream releases.
+
+For the engineering record behind this fork — what the panel demands of a
+player, why the host boundary looks the way it does, and how to build,
+verify and merge upstream — see `claude-docs/`
+([requirements](claude-docs/requirements.md),
+[design](claude-docs/design.md),
+[development](claude-docs/development.md)).
 
 ## The host boundary
 
@@ -98,11 +105,12 @@ operating system owns the timezone and network time, so the clock
 screen's timezone picker and "set time from the internet" toggle should
 be visible but inert, while the 12/24-hour switch stays live. Rather
 than editing the panel or silently swallowing its input, the fork
-disables such controls from the outside: `ui-policy.toml` in the
-fixtures maps controls to actions (`hide`, `disable`, `readonly`),
+disables such controls from the outside: `core/src/chumby/ui-policy.toml`
+maps controls to actions (`hide`, `disable`, `readonly`, `tint`),
 reapplied continuously so re-entering a screen can't bring a control
-back. Format and the current rules: the header comment of `ui_policy.rs`
-and chumby-pi's `claude-docs/reference/18-clock-screen-and-ui-policy.md`.
+back. The rules are compiled into the player — this fork runs one SWF, so
+which of its controls are dead belongs here. Format and mechanism: the
+header comment of `ui_policy.rs` and `claude-docs/design.md` §5.
 
 ## Building and running
 
@@ -110,31 +118,41 @@ and chumby-pi's `claude-docs/reference/18-clock-screen-and-ui-policy.md`.
 cargo build -p ruffle_desktop
 ```
 
-Run it against the chumby-pi fixtures:
+`controlpanel.swf` is copyrighted chumby firmware and is not distributed
+here — take it from your own chumby (or a backup of one) and put it in
+`swf-assets/`. Then:
+
+```sh
+./run-controlpanel.sh
+```
+
+which wraps:
 
 ```sh
 target/debug/ruffle_desktop \
   --load-behavior blocking \
   --filesystem-access-mode allow \
-  --chumby-fixtures <chumby-pi>/fixtures \
+  --chumby-fixtures fixtures \
   --chumby-control /tmp/chumby-ctl \
   -PlocalCache=1 \
-  controlpanel.swf
+  swf-assets/controlpanel.swf
 ```
 
-chumby-pi's `run-controlpanel.sh` wraps all of this. `controlpanel.swf`
-is copyrighted chumby firmware and is not distributed here. Useful log
-targets: `chumby_host` (all environment traffic), `chumby_audio`, and
-`chumby_pick` (a click-target diagnostic).
+The `fixtures/` tree in this repo is the virtual chumby: the panel's
+filesystem, the canned output of the commands it runs, and the chumby.com
+responses it expects. `chumby-ctl bend` squeezes the (virtual) bend sensor
+to summon the control-panel bar. Useful log targets: `chumby_host` (all
+environment traffic), `chumby_audio`, and `chumby_pick` (a click-target
+diagnostic).
 
 ## Keeping up with upstream
 
 The `chumby` branch is kept linear: the current upstream `master` with
-the whole fork on top as a single squashed commit. Upstream releases are
-absorbed by rebasing that commit onto the new tip, using the hook list
-in `patch-notes.md` to resolve conflicts. The real test after a merge is
-not that it compiles but that `controlpanel.swf` boots to the panel —
-the hooks can break silently.
+the fork's work on top. Upstream releases are absorbed by rebasing onto
+the new tip, using the hook list in `claude-docs/design.md` §8 to resolve
+conflicts. Work happens on a feature branch per session, squashed on
+merge. The real test after a merge is not that it compiles but that
+`controlpanel.swf` boots to the panel — the hooks can break silently.
 
 ---
 

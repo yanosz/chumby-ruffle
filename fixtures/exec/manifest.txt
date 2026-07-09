@@ -1,0 +1,18 @@
+# command-prefix<TAB>response-file   (longest prefix wins)
+guidgen.sh	guid.txt
+macgen.sh	mac.txt
+network_status.sh	network_status.xml
+signal_strength	signal_strength.xml
+chumby_version -h	version_h.txt
+chumby_version -s	version_s.txt
+chumby_version -f	version_f.txt
+chumby_version -n	version_n.txt
+dcid -o	dcid.xml
+md5sum /tmp/.guidhash	guidhash_md5.txt
+sync	empty.txt
+rm /psp/ifalarm	empty.txt
+reload_backup_alarm	empty.txt
+killall headphone_mgr	empty.txt
+mkdir /tmp/widgetcache	zero.txt
+nice -n 10 curl	empty.txt
+rm /tmp/musicsource	empty.txt

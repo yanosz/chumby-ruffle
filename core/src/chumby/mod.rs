@@ -2,8 +2,8 @@
 //!
 //! Everything chumby-specific lives in this module, always compiled in
 //! this fork. Upstream Ruffle files receive only minimal registration
-//! hooks; the README lists them, and the chumby-pi project's
-//! `claude-docs/patch-notes.md` tracks them against upstream drift.
+//! hooks; the README lists them, and `claude-docs/design.md` §8 tracks them
+//! against upstream drift.
 //!
 //! Submodules:
 //! - `host`: the `ChumbyHost` trait (native / exec / fetch / fs categories)
@@ -14,7 +14,7 @@
 //! - `audio`: mpv-backed player behind the audio native family
 //! - `input`: simulated-input control channel (stdin + FIFO line commands)
 //! - `ui_policy`: declarative dim/disable of panel controls the host
-//!   platform does not support (`<fixtures>/ui-policy.toml`)
+//!   platform does not support (rules compiled in from `ui-policy.toml`)
 
 pub mod audio;
 pub mod avm;

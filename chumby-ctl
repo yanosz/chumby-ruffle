@@ -1,0 +1,36 @@
+#!/bin/sh
+# chumby-ctl — poke the running chumby player over its control FIFO.
+#
+# Usage:
+#   chumby-ctl bend          # full squeeze (press + release)
+#   chumby-ctl tap           # alias for bend
+#   chumby-ctl bend down     # press and hold
+#   chumby-ctl bend up       # release
+#
+# The FIFO is created by the player launcher (--chumby-control). Override
+# the path with CHUMBY_CTL. Stands in for the physical bend button until
+# the GPIO17 bridge exists; also the scripting/IPC entry point after that.
+
+CTL="${CHUMBY_CTL:-/tmp/chumby-ctl}"
+
+case "$1" in
+    bend|tap)
+        cmd="$*"
+        ;;
+    *)
+        echo "usage: chumby-ctl bend [down|up] | tap" >&2
+        exit 2
+        ;;
+esac
+
+if [ ! -p "$CTL" ]; then
+    echo "chumby-ctl: no control FIFO at $CTL (player not running?)" >&2
+    exit 1
+fi
+
+# Opening a FIFO for writing blocks forever if nobody is reading it;
+# bail out instead of hanging when the player is gone.
+if ! timeout 2 sh -c "printf '%s\n' \"$cmd\" > \"$CTL\""; then
+    echo "chumby-ctl: player is not reading $CTL" >&2
+    exit 1
+fi

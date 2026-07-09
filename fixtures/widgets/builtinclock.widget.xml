@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Per-widget metadata sidecar; see claude-docs/design.md §3. -->
+<widget id="2">
+  <name>Clock</name>
+  <description>Built-in chumby clock</description>
+  <version>1.0</version>
+  <mode mode="timeout" time="86400"/>
+  <access sendable="false" deleteable="false" access="private" virtualable="false"/>
+  <user username="jan"/>
+  <movie href="file:///{FIXTURES}/widgets/builtinclock.swf" contenttype="application/x-shockwave-flash"/>
+  <thumbnail href="file:///{FIXTURES}/widgets/builtinclock.jpg" contenttype="image/jpeg"/>
+</widget>
