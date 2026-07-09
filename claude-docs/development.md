@@ -16,9 +16,13 @@ Concepts: [design.md](design.md). What the player owes the panel:
 
 **One feature branch per working session, squashed on merge.** Branch from
 the fork's default branch (`chumby`), do the session's work in as many
-commits as are useful, and squash when merging back. Do not amend and
-force-push a long-lived shared commit — that was the old discipline and it
-is retired.
+commits as are useful, and open a pull request; Jan merges it with GitHub's
+**Squash and merge**. Do not amend and force-push a long-lived shared commit
+— that was the old discipline and it is retired.
+
+The PR is also the acceptance gate: `chumby.yml` triggers on pull requests
+against `chumby`, so the movie-start check runs on the branch before it
+lands. A session branch on its own gets no CI.
 
 The fork's default branch tracks upstream Ruffle with the chumby work
 applied on top. When the pin in chumby-pi moves, the submodule gitlink in

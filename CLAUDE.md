@@ -41,7 +41,9 @@ Non-negotiable rules:
   and say what it is.
 - Keep code comments brief. Comment only what the code cannot say: the
   why, a non-obvious constraint, a reference. Do not narrate the obvious.
-- One feature branch per working session, squashed on merge.
+- One feature branch per working session; it lands as a pull request against
+  `chumby`, merged with GitHub's Squash and merge. Opening the PR is what
+  runs CI. Merging is the user's call.
 - Ask before iterating. When scope is ambiguous, one clarifying question
   beats an exploratory detour. A question from the user is a question, not
   an instruction to start coding.
