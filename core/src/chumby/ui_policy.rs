@@ -1,12 +1,13 @@
 //! Declarative UI policy: neutralize panel controls the host platform does
 //! not support, without touching the SWF.
 //!
-//! Loaded from `<fixtures>/ui-policy.toml` (rules are data, shipped with the
-//! fixtures; see the chumby-pi repo's `fixtures/ui-policy.toml` for the rules
-//! and `claude-docs/design.md` §5 for the mechanism). Applied from `avm::method` on every
-//! chumby native call — the panel polls `_bent` (5,25) once per frame, so
-//! this re-applies at frame cadence and survives SWF-side re-inits; the walk
-//! is a handful of child lookups per rule and costs nothing measurable.
+//! The rules live in `ui-policy.toml` next to this file and are compiled in:
+//! this fork exists to run one SWF, so which of that SWF's controls are dead
+//! is a property of the fork, not of whoever packages it. Applied from
+//! `avm::method` on every chumby native call — the panel polls `_bent` (5,25)
+//! once per frame, so this re-applies at frame cadence and survives SWF-side
+//! re-inits; the walk is a handful of child lookups per rule and costs
+//! nothing measurable. Mechanism: `claude-docs/design.md` §5.
 //!
 //! File format (TOML):
 //! ```toml
@@ -42,7 +43,6 @@ use crate::avm1::{Activation, Value};
 use crate::display_object::{DisplayObject, TDisplayObject, TDisplayObjectContainer};
 use crate::string::{AvmString, WString};
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 use swf::Fixed8;
 
@@ -84,37 +84,27 @@ fn last_state() -> &'static Mutex<HashMap<usize, u8>> {
     LAST_STATE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// Parse `<fixtures>/ui-policy.toml`. Called once at startup, next to
-/// `set_host` (desktop `main.rs`). Missing file = empty policy, not an error.
-pub fn load(fixtures_root: &Path) {
-    let path = fixtures_root.join("ui-policy.toml");
-    let rules = match std::fs::read_to_string(&path) {
-        Ok(text) => parse(&text, &path),
-        Err(_) => {
-            tracing::info!(target: "chumby_host",
-                "no ui-policy.toml in {} — UI policy empty", fixtures_root.display());
-            Vec::new()
-        }
-    };
-    if !rules.is_empty() {
-        tracing::info!(target: "chumby_host",
-            "UI policy loaded: {} rule(s) from {}", rules.len(), path.display());
-    }
-    let _ = POLICY.set(rules);
+/// The compiled-in rule set, parsed on first use. A malformed rule is skipped
+/// with a warning rather than being fatal; `test_embedded_policy_parses`
+/// guards the shipped file so that never happens unnoticed.
+fn policy() -> &'static Vec<Rule> {
+    POLICY.get_or_init(|| {
+        let rules = parse(include_str!("ui-policy.toml"));
+        tracing::info!(target: "chumby_host", "UI policy: {} rule(s)", rules.len());
+        rules
+    })
 }
 
-fn parse(text: &str, path: &Path) -> Vec<Rule> {
+fn parse(text: &str) -> Vec<Rule> {
     let table: toml::Table = match text.parse() {
         Ok(t) => t,
         Err(e) => {
-            tracing::warn!(target: "chumby_host",
-                "ui-policy: cannot parse {}: {e}", path.display());
+            tracing::warn!(target: "chumby_host", "ui-policy: cannot parse: {e}");
             return Vec::new();
         }
     };
     let Some(toml::Value::Array(entries)) = table.get("rule") else {
-        tracing::warn!(target: "chumby_host",
-            "ui-policy: no [[rule]] entries in {}", path.display());
+        tracing::warn!(target: "chumby_host", "ui-policy: no [[rule]] entries");
         return Vec::new();
     };
 
@@ -213,7 +203,10 @@ fn resolve<'gc>(root: DisplayObject<'gc>, selector: &[Segment]) -> Resolution<'g
 /// Apply the policy to the current display tree. Called from `avm::method`;
 /// idempotent, cheap, re-applies whenever a screen instance (re)appears.
 pub fn apply<'gc>(activation: &mut Activation<'_, 'gc>) {
-    let Some(rules) = POLICY.get() else { return };
+    let rules = policy();
+    if rules.is_empty() {
+        return;
+    }
     if rules.is_empty() {
         return;
     }
@@ -353,7 +346,7 @@ id        = "no-selectors"
 action    = "hide"
 selectors = []
 "#;
-        let rules = parse(text, Path::new("test"));
+        let rules = parse(text);
         // The malformed rules are skipped with a warning, not fatal.
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].id, "a");
@@ -364,5 +357,20 @@ selectors = []
         assert!(matches!(sel[1], Segment::Depth(15)));
         assert!(matches!(&sel[2], Segment::Name(n) if n == "timePanel"));
         assert!(matches!(&sel[3], Segment::Name(n) if n == "ntpButton"));
+    }
+
+    /// The shipped policy is compiled in, so a typo in it would otherwise
+    /// only surface as a control that silently stays live on the device.
+    #[test]
+    fn test_embedded_policy_parses() {
+        let text = include_str!("ui-policy.toml");
+        let rules = parse(text);
+        assert_eq!(
+            rules.len(),
+            text.matches("\n[[rule]]").count(),
+            "a rule in the shipped ui-policy.toml was skipped as malformed"
+        );
+        assert!(rules.iter().any(|r| r.id == "clock-ntp-toggle"));
+        assert!(rules.iter().all(|r| !r.selectors.is_empty()));
     }
 }

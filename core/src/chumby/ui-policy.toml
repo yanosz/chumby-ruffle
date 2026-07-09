@@ -1,0 +1,127 @@
+# UI policy: controls of controlpanel.swf that this player cannot honour,
+# neutralized from the Rust side. Compiled in via include_str! — file format,
+# selector syntax and action semantics are documented in ui_policy.rs, the
+# mechanism in claude-docs/design.md §5. Editing a rule needs a rebuild.
+#
+# The Pi OS owns timezone and NTP (systemd-timesyncd), so on the clock
+# settings screen (Settings → TIME/DATE) the timezone is display-only and
+# time-sync selection is off limits; only the 12/24h checkbox stays live.
+#
+# Selector segments: name:<instanceName> (bare = same) or depth:<N> (raw
+# PlaceObject tag depth). The depth alternatives exist because the settings
+# grid (DS1748) and the clock panel (DS1736) are placed without instance
+# names — their AVM1 auto-names depend on navigation history.
+# Chain: controlPanel → [settings grid @15] → [clock panel @1] → timePanel.
+
+# "Set time from the Internet" checkbox: NTP is always on (the OS syncs
+# time); the checkbox stays visible/checked but dimmed and inert.
+[[rule]]
+id        = "clock-ntp-toggle"
+action    = "disable"
+selectors = [
+  "controlPanel/depth:15/depth:1/name:timePanel/name:ntpButton",
+  "controlPanel/depth:15/depth:1/depth:1/depth:46",
+]
+
+# Its label dims with it (reads as one disabled unit — UI1 decision 3).
+[[rule]]
+id        = "clock-ntp-label"
+action    = "disable"
+selectors = [
+  "controlPanel/depth:15/depth:1/name:timePanel/name:ntpLabel",
+  "controlPanel/depth:15/depth:1/depth:1/depth:52",
+]
+
+# SET TIME ZONE globe: timezone comes from the OS; the globe + city text
+# stay as read-only display, the picker (E12 map) becomes unreachable.
+[[rule]]
+id        = "clock-set-timezone"
+action    = "disable"
+selectors = [
+  "controlPanel/depth:15/depth:1/name:timePanel/name:setTimezoneButton",
+  "controlPanel/depth:15/depth:1/depth:1/depth:24",
+]
+
+# Settings menu (E0, grid DS1748 @ controlPanel depth:15) entries for
+# features the Pi does not expose through the panel. Disabling the menu
+# icon (named child of the grid) makes the whole sub-panel unreachable —
+# the gotoAndStop("<frame>") in DefineSprite_1748/frame_1 never fires.
+# Kept live: clockButton (E5), volumeButton (E1), doneButton,
+# microphoneButton (not requested).
+
+# NETWORK: the Pi configures Wi-Fi/Ethernet at the OS level; the panel's
+# network wizard (E3 → DS612) is a no-op here.
+[[rule]]
+id        = "settings-network"
+action    = "disable"
+selectors = ["controlPanel/depth:15/name:networkButton"]
+
+# CHUMBY INFO (E6): deliberately NOT disabled — it is the gateway to the Info
+# screen (E6) and the Licenses viewer (E7), both of which we ship. Its own
+# geek (piButton) and intro (introButton) buttons are still live and should
+# be disabled: geek is unwanted, and intro cannot play on the localCache
+# widget path. Not done yet.
+
+# TOUCHSCREEN (E4): calibration is meaningless on the Pi's display path.
+[[rule]]
+id        = "settings-touchscreen"
+action    = "disable"
+selectors = ["controlPanel/depth:15/name:touchscreenButton"]
+
+# BRIGHTNESS (E2/altBrightness): not wired on the Pi yet. Disabled for
+# now; the future brightness milestone (plan) must RE-ENABLE this entry
+# (drop this rule) once panel brightness control lands.
+[[rule]]
+id        = "settings-brightness"
+action    = "disable"
+selectors = ["controlPanel/depth:15/name:brightnessButton"]
+
+# Main control-panel bar: the "mainButtons" sprite (controlPanel frame
+# "main"), whose controls are all explicitly named children — a single
+# named selector suffices (no depth fallback, same as the settings icons).
+
+# CHANNEL (D1-D7): switching/adding channels needs remote channel download
+# + registration, deferred to the project's last feature. This build ships
+# ONE boot-generated local channel = all installed widgets, so the channel
+# picker/info/add/reload is a dead-end. Disabling the button makes the
+# whole "channel" sub-panel (controlPanel frame "channel", DS1627)
+# unreachable.
+[[rule]]
+id        = "main-channel"
+action    = "disable"
+selectors = ["controlPanel/name:mainButtons/name:channelButton"]
+
+# DELETE (B8): removing a widget only means something with server-side
+# channel management. The local channel is regenerated from the shipped
+# widgets at boot, so a delete cannot persist — dead-end. Disable it.
+[[rule]]
+id        = "main-delete"
+action    = "disable"
+selectors = ["controlPanel/name:mainButtons/name:deleteButton"]
+
+# SEND (B10) and RATE (B7): both are scope=skip (send is an excluded
+# social feature; rating needs the widget catalog service). updateButtons
+# keeps them visible/live whenever a widget shows, so disable them too so
+# no skip control on the bar is a live dead-end (user 2026-07-08).
+[[rule]]
+id        = "main-send"
+action    = "disable"
+selectors = ["controlPanel/name:mainButtons/name:sendButton"]
+
+[[rule]]
+id        = "main-rate"
+action    = "disable"
+selectors = ["controlPanel/name:mainButtons/name:rateButton"]
+
+# WIRED ETHERNET indicator (I3, 2026-07-08). The dashboard/main-bar network
+# glyph is the WifiIndicator (class frame_2:8060) — a 5-bar wifi meter placed
+# UNNAMED at depth 136 in mainButtons (DS784). On a wired link the host reports
+# signal_strength connected=1/full (5 bars shown) and this rule recolours them
+# a distinct blue = "wired, link up". `tint` = AVM1 Color.setRGB (flat-fill).
+# KNOWN DEFECT: this rule is unconditional, so the bar stays blue on wifi too.
+# It must become conditional once real_net.rs reports the true interface type.
+[[rule]]
+id        = "wired-eth-bar"
+action    = "tint"
+color     = "#1E90FF"
+selectors = ["controlPanel/name:mainButtons/depth:136"]

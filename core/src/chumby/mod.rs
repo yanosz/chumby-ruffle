@@ -14,7 +14,7 @@
 //! - `audio`: mpv-backed player behind the audio native family
 //! - `input`: simulated-input control channel (stdin + FIFO line commands)
 //! - `ui_policy`: declarative dim/disable of panel controls the host
-//!   platform does not support (`<fixtures>/ui-policy.toml`)
+//!   platform does not support (rules compiled in from `ui-policy.toml`)
 
 pub mod audio;
 pub mod avm;

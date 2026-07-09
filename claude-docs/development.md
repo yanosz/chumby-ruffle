@@ -36,6 +36,7 @@ Everything the fork adds is in `core/src/chumby/`:
 | `avm.rs` | the `ASnative(5,N)` dispatch table |
 | `navigator.rs` | `exec://`, chumby HTTP, and `file://` interception |
 | `ui_policy.rs` | declarative disabling/tinting of panel controls |
+| `ui-policy.toml` | the rules themselves, compiled in with `include_str!` |
 | `audio.rs` | mpv backend over JSON IPC |
 | `input.rs` | control FIFO |
 
@@ -111,8 +112,10 @@ Three levels, in ascending cost.
 
 **Unit tests** — `cargo test -p ruffle_core chumby`. The ones that matter
 cover things that silently rot: the ui-policy parser and selector
-segmentation, the `_setTimeZone` → `_getTimeZone` round trip, the audio
-state machine.
+segmentation, that the *shipped* `ui-policy.toml` parses with no rule
+skipped (a typo there would otherwise surface as a control that stays live
+on the device), the `_setTimeZone` → `_getTimeZone` round trip, and the
+audio state machine.
 
 **The movie-start check** — the real acceptance gate (NFR8), because a
 build can compile clean and still have dead ASnative hooks. Run the player

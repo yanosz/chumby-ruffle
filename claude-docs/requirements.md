@@ -213,8 +213,10 @@ Requirements on the mechanism:
   color transform).
 - **Idempotent re-application**, because the SWF re-initializes controls on
   screen entry (`fixButtons()`).
-- **Rules are data**, versioned outside this repository, so changing one
-  needs no rebuild.
+- **Rules are declarative data, owned by this repository.** Which of the
+  panel's controls are dead is a fact about the panel and about what this
+  player can honour, not about whoever packages it — this fork exists to run
+  one SWF. They are compiled in, so the player always has them.
 
 ### FR10 — Report real device state on status surfaces
 

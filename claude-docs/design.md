@@ -152,9 +152,13 @@ and claims four kinds of URL:
 
 ## 5. UI policy
 
-Rules are declarative and live in the appliance repo
-(`fixtures/ui-policy.toml`), parsed at startup, applied from `avm::method`
-at frame cadence, idempotent.
+Rules live in `core/src/chumby/ui-policy.toml` and are compiled in with
+`include_str!`, parsed on first use, applied from `avm::method` at frame
+cadence, idempotent. They are the fork's own, because which of the panel's
+controls are dead is a property of the panel and of what this player can
+honour — not of whoever packages it. The cost is that editing a rule needs
+a rebuild; `test_embedded_policy_parses` catches a typo at test time rather
+than as a control that silently stays live on the device.
 
 ```toml
 [[rule]]
@@ -194,7 +198,7 @@ graying is cosmetic — the control stays live. Making the underlying natives
 no-ops leaves a UI that looks functional and silently ignores input, which
 around alarms is the worst possible failure. Setting properties at runtime is
 the same mechanism as the wizard skip, costs nothing per frame, keeps the SWF
-untouched, and makes each policy entry data rather than code.
+untouched, and keeps each policy entry declarative rather than code.
 
 ## 6. Widget playback: the localCache path
 
@@ -247,7 +251,7 @@ New code lives in `core/src/chumby/`: `host.rs` (trait + registry),
 | `core/Cargo.toml` | `toml` (ui-policy parsing) and target-gated `libc` (getifaddrs) |
 | `desktop/src/player.rs` | `ChumbyNavigator` wrap before `.with_navigator(…)` |
 | `desktop/src/cli.rs` | `--chumby-fixtures <PATH>`, `--chumby-control <FIFO>` |
-| `desktop/src/main.rs` | host init, `ui_policy::load`, `input::spawn` |
+| `desktop/src/main.rs` | host init, `input::spawn` |
 | `desktop/src/app.rs` | Home key → bend; `WindowEvent::Touch` arm (upstream ignores touch) with the ≥1 s stationary hold → bend; control-FIFO pointer-command drain in `about_to_wait` |
 
 Hooks are not numbered. An earlier `H1…H11` scheme carried no information

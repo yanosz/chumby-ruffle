@@ -105,12 +105,12 @@ operating system owns the timezone and network time, so the clock
 screen's timezone picker and "set time from the internet" toggle should
 be visible but inert, while the 12/24-hour switch stays live. Rather
 than editing the panel or silently swallowing its input, the fork
-disables such controls from the outside: `ui-policy.toml` in the
-fixtures maps controls to actions (`hide`, `disable`, `readonly`),
+disables such controls from the outside: `core/src/chumby/ui-policy.toml`
+maps controls to actions (`hide`, `disable`, `readonly`, `tint`),
 reapplied continuously so re-entering a screen can't bring a control
-back. Format and mechanism: the header comment of `ui_policy.rs` and
-`claude-docs/design.md` §5; the rules themselves live in chumby-pi's
-`fixtures/ui-policy.toml`.
+back. The rules are compiled into the player — this fork runs one SWF, so
+which of its controls are dead belongs here. Format and mechanism: the
+header comment of `ui_policy.rs` and `claude-docs/design.md` §5.
 
 ## Building and running
 
