@@ -148,6 +148,40 @@ ffdec -export script,frame,image,shape claude-docs/appendix/controlpanel-2.8.87b
 Instance names and depths — what UI-policy selectors are built from — come
 from the XML dump (`ffdec -swf2xml`), not from the script export.
 
+### Where the knowledge came from
+
+The method, if any of it ever has to be redone: export with ffdec, scan the
+ActionScript statically for every external touchpoint (`ASnative(`,
+`fscommand(`, `getURL`, `XML.load`, `loadMovie`, `SharedObject`), then run the
+panel under *stock* Ruffle and triage what breaks. The static scan gives the
+prior; the run tells you what actually fires.
+
+- [ChumbyNative](https://wiki.chumby.com/index.php?title=ChumbyNative) — the
+  primary reference for the vendor-call table, still online. So is
+  [Controlling BTplay](https://wiki.chumby.com/index.php?title=Controlling_BTplay)
+  (the audio family). `Developing_Widgets_for_Chumby:_Sensor_Access` is a 404
+  as of 2026-07.
+- [Scott Janousek's Flash Lite deck](https://speakerdeck.com/scottjanousek/developing-flash-lite-widgets-for-the-chumby-platform)
+  — a community list of `ASnative(5,n)` indices.
+- forum.chumby.com thread id=9663 ("Success!", a Sony dash running the panel)
+  — the evidence that a replacement control panel needs only the ChumbyNative
+  call set, which is the premise this whole fork rests on.
+- [zurk's offline firmware](https://github.com/francistheodorecatte/zurks-offline-firmware-classic)
+  — the prior art. It impersonates chumby.com with DNS capture plus a local
+  lighttpd serving ~10 static XML stubs and ~10 CGI scripts, keeps real
+  internet radio flowing while mocking everything account-related, and serves
+  widget SWFs over `file://` hrefs. We do the same thing inside the player
+  instead, because we own it. Its `defaultUpdateTime=9999` /
+  `defaultProfileTime=9999` profile parameters are the panel's own documented
+  way to quiet its polling loops.
+- `/home/jan/chumby_backup` — a real Chumby Classic's rootfs (firmware 1.7.2,
+  `ironforge`), read-only ground truth for what the environment looked like.
+
+When the wiki, the backup and the decompiled SWF disagree, **the SWF wins.**
+The wiki lists the time family under category 103; the SWF binds it at
+5,176–178. The wiki numbers a `PlayAudio` at 5,151; the panel calls
+`_playAudio` at 5,144.
+
 ## 4b. Regenerating the widget channel
 
 `fixtures/http/xml.chumby.com/xml/profiles` is generated, not hand-written.

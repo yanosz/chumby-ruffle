@@ -9,7 +9,10 @@ concern when working here.
 Read `claude-docs/` before doing anything:
 
 - `claude-docs/requirements.md` — what `controlpanel.swf` demands of a
-  player, the non-negotiables, and §3 **Known gaps**: the open work.
+  player, the non-negotiables, and §3 **Known gaps**: the open work. (The
+  project-wide roadmap, spanning both repos, is chumby-pi's `ROADMAP.md`.
+  It was compressed from a long plan and is a map, not evidence: when it
+  and the code disagree, the code wins.)
 - `claude-docs/design.md` — the host boundary, the interception points,
   and §8 the exact patch surface against upstream Ruffle.
 - `claude-docs/development.md` — build, run, verify, merge upstream, and
