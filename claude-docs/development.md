@@ -256,8 +256,15 @@ conflict-free.
    `grep -n chumby` it and confirm the hook survived.
 3. Do **not** re-introduce the `chumby` cargo feature, however tempting the
    conflict resolution looks. Its removal was a decision, not drift.
-4. Build, then run the movie-start check. Compiling is not passing.
-5. Update [design.md](design.md) §8 if the surface moved.
+4. Do **not** restore `.github/dependabot.yml`. Upstream ships one; this fork
+   deleted it on 2026-07-10. Dependencies here move when upstream is merged,
+   not when a bot opens a pull request, so its only effect was noise — ten
+   open PRs, five of them failing CI. A merge will present the deletion as a
+   conflict; keep the deletion. Dependabot reads that file only from the
+   default branch, and security updates and vulnerability alerts are both off,
+   so its absence stops every Dependabot PR.
+5. Build, then run the movie-start check. Compiling is not passing.
+6. Update [design.md](design.md) §8 if the surface moved.
 
 ## 7. Traps
 
