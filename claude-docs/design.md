@@ -306,6 +306,28 @@ remembering:
 Where mpv is absent the backend logs "audio will be a silent stub" and
 continues.
 
+### The backup alarm
+
+`backup_alarm.rs` is chumbalarmd reduced to its contract (requirements
+FR13): a thread polls `<rootfs>/psp/ifalarm` every 2 s; if the time in it
+passes while the file exists, delete the file and sound a Klaxon for the
+configured duration, via a dedicated mpv child. Polling the file — instead
+of arming a long sleep when the panel says so — is the design: the file is
+the single source of truth, so boot-time missed alarms and re-arms need no
+extra paths, and a wall-clock step (the Pi has no RTC) can never strand a
+computed sleep. Two exec commands are intercepted ahead of the fixture
+manifest in `FixtureHost::exec`: dismissal (`rm /psp/ifalarm; …`) really
+deletes the file and kills a sounding tone; the bare `reload_backup_alarm`
+is a no-op.
+
+The tone child is deliberately not `AudioPlayer`'s: no shared `child` slot,
+no IPC socket, no network source — the primary alarm failing (the mpv
+stall-on-WLAN-loss behaviour measured 2026-07-10: silent from cache-drain,
+alive for its 60 s network timeout, then exit; `paused-for-cache` over IPC
+is the live stall signal if we ever want a faster fallback) must not be
+able to take the beep down with it. PipeWire mixes the two if both are
+audible.
+
 ## 10. Input
 
 Upstream's winit `app.rs` has no touch handling at all — a Wayland touch is

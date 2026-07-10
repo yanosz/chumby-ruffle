@@ -71,8 +71,9 @@ Format gotchas (cost a debugging round each on 2026-07-06):
 - `exec/`: GUID, MAC, healthy wired `network_status.sh`, full-bars
   `signal_strength`, `chumby_version` h/s/f/n = 3.8 / 1.7.2 / 1.7.2 /
   CHUMBYPI001, minimal `dcid`, quiet handlers for headphone_mgr /
-  widgetcache / musicsource / alarm-dismiss (`rm /psp/ifalarm`,
-  `reload_backup_alarm`) commands.
+  widgetcache / musicsource commands. The backup-alarm commands
+  (`rm /psp/ifalarm`, `reload_backup_alarm`) are **not** fixtures — the
+  host implements them for real (`core/src/chumby/backup_alarm.rs`).
 - `http/`: authorize + chumbies + the widget-channel profile
   (`xml/profiles`). The profile is **generated** from the widget sidecars
   by `chumby-widget-channel` (repo root), not hand-edited — see

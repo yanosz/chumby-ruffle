@@ -100,6 +100,8 @@ exist. The ones on the boot path or on a screen in scope:
 | `chumby_set_volume\|pan\|mute [n]` | backtick | F2:9456… | nothing, or the current value |
 | `sync_time_state.sh 0\|1` | `exec://` | F2:16755 | nothing |
 | `dcid -o` | backtick | F2:9597 | DCID XML |
+| `reload_backup_alarm` | backtick | F2:11981 | nothing (the watcher polls the file — FR13) |
+| `rm /psp/ifalarm; reload_backup_alarm` | backtick | F2:11986 | nothing, but **must really delete the file** (FR13) |
 
 The rest of the catalog — `ap_scan`, `start_network`, `restart_network`,
 `network_adapter_list.sh`, the firmware-update machinery, the intercom
@@ -261,6 +263,40 @@ and says so in the log.
   over SSH. Pointer commands go through the same window→movie coordinate
   mapping as real input, one action per event-loop iteration (sliders need
   the sequence spread across ticks).
+
+### FR13 — Backup alarm: the dead-man beep
+
+Real hardware ran `chumbalarmd`, a standalone daemon whose job was to wake
+the user even when the primary alarm's content failed — its help text:
+*"will wake you with a loud beep if you don't respond to your primary
+alarm."* The typical failure it guards on the Pi: WLAN loss while a net
+stream is the alarm (mpv plays its ~5 s cache, sits silent for its 60 s
+network timeout, exits; the panel never notices — measured 2026-07-10).
+
+The contract is one file, owned by the panel (AlarmSet, F2:11952):
+`/psp/ifalarm` holds the fire time in epoch seconds (primary alarm +
+per-alarm `backupDelay` minutes); answering the ring screen deletes it. If
+the time passes while the file exists, the host **must** sound a loud tone —
+one that shares no fate with the primary playback: its own mpv child, a
+local tone source, no network on the path (`backup_alarm.rs`).
+
+Decisions (Jan, 2026-07-10, scoping A2 of the options ladder):
+- **In-process**, not a separate daemon: covers content failure, crash
+  (systemd restarts the player) and power loss (boot check), accepting that
+  a *hung* player kills the watcher with it. Proportionality: hangs have not
+  been observed on our player; chumbalarmd's full fate-independence bought
+  insurance against a flakiness we don't have.
+- **Missed-alarm boot path is in scope**: a fire time found already in the
+  past sounds immediately — unless older than **1 hour**, then it is a
+  stale leftover and is cleared silently.
+- **Fixed duration**, not until-dismissed: `/psp/backup_alarm_duration`
+  seconds (default 60) — the knob chumbalarmd also read; dismissal during
+  the tone stops it early.
+- Tone is `Klaxon.mp3` from the shipped alarmtones (local file), falling
+  back to an mpv-generated sine if missing; volume from
+  `/psp/backup_alarm_volume` (default 100), through mpv only — no
+  sink/hardware volume writes until the on-device check says it is too
+  quiet.
 
 ---
 
