@@ -91,12 +91,12 @@ exist. The ones on the boot path or on a screen in scope:
 
 | command | via | site | must return |
 |---------|-----|------|-------------|
-| `guidgen.sh` | `exec://` | F2:204 | GUID text (chomped, uppercased) |
+| `guidgen.sh` | `exec://` | F2:204 | GUID text (chomped, uppercased) — real, derived from the machine serial (FR10) |
 | `macgen.sh` | `exec://` | F2:245 | MAC text |
 | `network_status.sh` | `exec://` | F2:286 | `<network><configuration type ssid auth encryption/><interface ip netmask gateway nameserver1 nameserver2>[<error/>]</interface></network>` |
 | `signal_strength` | `exec://` + backtick | F2:8110, 27226 | `<wifi connected linkquality signalstrength/>` |
-| `chumby_version -h/-s/-f/-n` | backtick | F2:30551–66 | version strings |
-| `md5sum /tmp/.guidhash` | backtick | F2:1946 | `<md5>  <file>` |
+| `chumby_version -h/-s/-f/-n` | backtick | F2:30551–66 | version strings (`-h/-s/-f` fixtures = platform identity; `-n` real, FR10) |
+| `md5sum /tmp/.guidhash` | backtick | F2:1946 | `<md5>  <file>` — computed for real from the rootfs (FR10) |
 | `chumby_set_volume\|pan\|mute [n]` | backtick | F2:9456… | nothing, or the current value |
 | `sync_time_state.sh 0\|1` | `exec://` | F2:16755 | nothing |
 | `dcid -o` | backtick | F2:9597 | DCID XML |
@@ -239,6 +239,24 @@ Static-field audit (2026-07-10): every attribute of `network_status.sh` and
 deliberately empty — the panel renders a bare ssid line for unrecognized
 auth values, and reading the security mode would need nl80211 for a
 decorative suffix. Mechanism: [design.md](design.md) §7.
+
+**Device identity** (2026-07-10, pulled forward from the registration
+milestone — registration itself stays out, and the GUID still never leaves
+the process): the Info screen's `id:` and `HW#:` lines are real, replacing
+the crypto processor the original hardware read (`guidgen.sh` =
+`cpi.sh -p`, `chumby_version -n`). The seed is the SoC serial from
+`/proc/device-tree/serial-number` (falls back to `/etc/machine-id` on a dev
+box, then to the fixture). GUID = salted md5 of the serial as an uppercase
+8-4-4-4-12 string; `HW#` = `<model>-<serial>` where model is "RPI3B"-style
+from `/proc/device-tree/model`, or "PC" elsewhere — the panel has no model
+field, so the tag rides on the serial line. `md5sum <path>` is computed
+for real from the virtual rootfs. `hardware_version` stays `3.8` — platform
+identity gates panel behaviour and is not display text. Versions are
+platform identity too, answered from fixtures; ground truth for the values
+is the original device's `chumby_version` Perl script: `-s` prints
+`/etc/software_version` (`1.7.2`), `-f` prints the **third dot-field** of
+`/etc/firmware_build` (`1.7.1830` → `1830`) — a wrong `version_f.txt` had
+the Info screen showing 1.7.2 twice.
 
 ### FR11 — Audio
 

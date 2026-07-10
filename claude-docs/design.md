@@ -269,6 +269,14 @@ before. The panel caches `networkType`/`ssid` from the boot-time
 `gotNetworkStatus`, so a network change under a running panel shows on the
 Info screen only after a player restart.
 
+`RealNetHost::exec` also carries the **device identity** touchpoints
+(requirements FR10), implemented in `real_ident.rs` with the same
+real-else-fixture contract: `guidgen.sh` (salted-md5 GUID of the machine
+serial), `chumby_version -n` (model tag + serial, e.g. `RPI3B-…`), and an
+honest `md5sum <path>` computed from the virtual rootfs — the panel md5s
+`/tmp/.guidhash` for its chumby.com auth parameters, all intercepted
+in-process.
+
 ## 8. The patch surface
 
 New code lives in `core/src/chumby/`, file by file in

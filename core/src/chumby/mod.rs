@@ -24,6 +24,7 @@ pub mod fixture;
 pub mod host;
 pub mod input;
 pub mod navigator;
+pub mod real_ident;
 pub mod real_net;
 pub mod ui_policy;
 

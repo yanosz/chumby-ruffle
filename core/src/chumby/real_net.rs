@@ -3,10 +3,12 @@
 //!
 //! `RealNetHost` wraps a [`FixtureHost`] and answers the network `exec`
 //! touchpoints (`network_status.sh`, `signal_strength`, `macgen.sh`) from live
-//! kernel state; everything else delegates to the inner host. It is **always
-//! active** — when there is no default route (or on a non-Linux build), the
-//! reads return `None` and the call falls back to the inner fixture, so a
-//! desktop/CI run with no usable network still behaves as before.
+//! kernel state, plus the device-identity ones (`guidgen.sh`,
+//! `chumby_version -n`, `md5sum` — see `real_ident.rs`); everything else
+//! delegates to the inner host. It is **always active** — when there is no
+//! default route (or on a non-Linux build), the reads return `None` and the
+//! call falls back to the inner fixture, so a desktop/CI run with no usable
+//! network still behaves as before.
 //!
 //! Reads are `std` + two thin libc calls: the interface's IPv4 address and
 //! netmask come from `getifaddrs` (the same source `ip`/`ifconfig` use), the
@@ -116,6 +118,17 @@ impl ChumbyHost for RealNetHost {
             self.signal_strength_xml()
         } else if command.starts_with("macgen.sh") {
             self.mac().map(|m| format!("{m}\n"))
+        } else if command.starts_with("guidgen.sh") {
+            // Device identity (real_ident.rs): the crypto processor's job.
+            super::real_ident::guid().map(|g| format!("{g}\n"))
+        } else if command.starts_with("chumby_version -n") {
+            super::real_ident::hw_serial().map(|s| format!("{s}\n"))
+        } else if let Some(path) = command.strip_prefix("md5sum ") {
+            let path = path.trim();
+            self.inner
+                .fs()
+                .get_file(path)
+                .map(|content| super::real_ident::md5sum_line(&content, path))
         } else {
             None
         };

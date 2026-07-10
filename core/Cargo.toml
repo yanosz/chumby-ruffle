@@ -44,6 +44,8 @@ serde = { workspace = true }
 serde_json = { workspace = true, features = ["preserve_order"] }
 # chumby: ui-policy.toml parsing (chumby module); workspace-pinned version
 toml = { workspace = true }
+# chumby: device identity — GUID derivation and the honest `md5sum` exec.
+md-5 = "0.10"
 nellymoser-rs = { git = "https://github.com/ruffle-rs/nellymoser", rev = "073eb48d907201f46dea0c8feb4e8d9a1d92208c", optional = true }
 regress = { workspace = true }
 flash-lso = { git = "https://github.com/ruffle-rs/rust-flash-lso", rev = "61b717248aae853a4f5d8a103eba704268d286c8" }
