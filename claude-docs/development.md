@@ -29,9 +29,12 @@ gh pr create --repo yanosz/chumby-ruffle --base chumby --head <branch> \
     --title "…" --body "…"
 ```
 
-`--repo` is not optional: this checkout's `origin` is a local clone
-(`/home/jan/chumby-ruffle`), not GitHub, so a bare `git push origin` or
-`gh pr create` targets the wrong place. Push to the GitHub URL explicitly.
+`origin` is the GitHub fork (`yanosz/chumby-ruffle`) and `upstream` is
+`ruffle-rs/ruffle`, so a plain `git push -u origin <branch>` is right.
+Keep `--repo` on `gh pr create` anyway: with two GitHub remotes, `gh`
+may otherwise resolve against `upstream` and open the PR on
+ruffle-rs/ruffle. (An earlier claim here that `origin` was a local
+clone was stale — verified against `git remote -v`, 2026-07-10.)
 
 `chumby.yml` runs on the PR, but **on a pull request it only builds.**
 Starting the movie needs `controlpanel.swf`, which is copyrighted and lives

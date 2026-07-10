@@ -3,23 +3,27 @@
 //!
 //! On real hardware `guidgen.sh` (= `cpi.sh -p`) and `chumby_version -n`
 //! both read the crypto chip. Here the stable seed is the SoC serial from
-//! the device tree (survives reflashes and SD swaps), falling back to
-//! `/etc/machine-id` on a dev box; if neither exists (CI) the caller falls
-//! back to the fixture. The GUID is a salted md5 of the serial in the
-//! 8-4-4-4-12 shape the fixture also uses — the panel treats it as an
-//! opaque string, and it never leaves the process (every chumby.com
-//! endpoint is answered in-process; NFR6).
+//! the device tree (survives reflashes and SD swaps); its GUID is a salted
+//! md5 of the serial in the 8-4-4-4-12 shape the fixture also uses. A
+//! machine without a serial (dev box, CI) instead gets a random v4 GUID,
+//! generated at first start and persisted as `/psp/guid` in the virtual
+//! rootfs — per-box, stable across runs (decision 2026-07-10; a shared
+//! fixed GUID and, before that, an `/etc/machine-id` seed were both
+//! rejected). The panel treats the GUID as an opaque string, and it never
+//! leaves the process (every chumby.com endpoint is answered in-process;
+//! NFR6).
 
+use super::host::ChumbyFs;
 use md5::{Digest, Md5};
 
-const SERIAL_SOURCES: &[&str] = &["/proc/device-tree/serial-number", "/etc/machine-id"];
+const SERIAL_SOURCE: &str = "/proc/device-tree/serial-number";
 const MODEL_SOURCE: &str = "/proc/device-tree/model";
 /// Keeps the GUID from being a plain dictionary-hash of a guessable serial.
 const GUID_SALT: &str = "chumby-pi";
 
-/// The machine's stable serial, or `None` when no source exists.
+/// The machine's stable serial, or `None` off-device (→ fixture identity).
 pub fn serial() -> Option<String> {
-    SERIAL_SOURCES.iter().find_map(|path| read_cstr(path))
+    read_cstr(SERIAL_SOURCE)
 }
 
 /// `chumby_version -n` (the Info screen's `HW#:` line): model tag plus the
@@ -72,12 +76,45 @@ pub fn guid() -> Option<String> {
     serial().map(|s| format_guid(&md5_hex(format!("{GUID_SALT}:{s}").as_bytes())))
 }
 
+const DEV_GUID_PATH: &str = "/psp/guid";
+
+/// Off-device identity: a random GUID generated once and persisted in the
+/// panel's own persistence root. `None` (no entropy, unwritable rootfs)
+/// falls back to the fixture — a fixed answer beats one that changes every
+/// boot.
+pub fn dev_guid(fs: &dyn ChumbyFs) -> Option<String> {
+    if let Some(existing) = fs.get_file(DEV_GUID_PATH) {
+        let s = String::from_utf8_lossy(&existing).trim().to_owned();
+        if !s.is_empty() {
+            return Some(s);
+        }
+    }
+    let g = random_guid()?;
+    if let Err(e) = fs.put_file(DEV_GUID_PATH, g.as_bytes()) {
+        tracing::warn!(target: "chumby_host", "cannot persist {DEV_GUID_PATH}: {e:?}");
+        return None;
+    }
+    tracing::info!(target: "chumby_host", "generated dev GUID, persisted as {DEV_GUID_PATH}");
+    Some(g)
+}
+
+/// Version-4 UUID from the kernel CSPRNG, uppercase 8-4-4-4-12.
+fn random_guid() -> Option<String> {
+    use std::io::Read;
+    let mut b = [0u8; 16];
+    std::fs::File::open("/dev/urandom").ok()?.read_exact(&mut b).ok()?;
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    let hex: String = b.iter().map(|x| format!("{x:02x}")).collect();
+    Some(format_guid(&hex))
+}
+
 /// `md5sum <path>` output line for the given file content.
 pub fn md5sum_line(content: &[u8], path: &str) -> String {
     format!("{}  {path}\n", md5_hex(content))
 }
 
-fn md5_hex(data: &[u8]) -> String {
+pub(crate) fn md5_hex(data: &[u8]) -> String {
     let digest = Md5::digest(data);
     digest.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -97,6 +134,63 @@ fn format_guid(hex32: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chumby::host::HostError;
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    struct MemFs(Mutex<HashMap<String, Vec<u8>>>);
+
+    impl MemFs {
+        fn new() -> Self {
+            Self(Mutex::new(HashMap::new()))
+        }
+    }
+
+    impl ChumbyFs for MemFs {
+        fn get_file(&self, path: &str) -> Option<Vec<u8>> {
+            self.0.lock().unwrap().get(path).cloned()
+        }
+        fn put_file(&self, path: &str, data: &[u8]) -> Result<(), HostError> {
+            self.0.lock().unwrap().insert(path.to_owned(), data.to_vec());
+            Ok(())
+        }
+        fn file_exists(&self, path: &str) -> bool {
+            self.0.lock().unwrap().contains_key(path)
+        }
+        fn file_size(&self, path: &str) -> Option<u64> {
+            self.get_file(path).map(|d| d.len() as u64)
+        }
+        fn unlink(&self, path: &str) -> Result<(), HostError> {
+            self.0.lock().unwrap().remove(path);
+            Ok(())
+        }
+        fn dir_entry(&self, _path: &str, _index: u32) -> Option<(String, bool)> {
+            None
+        }
+    }
+
+    #[test]
+    fn dev_guid_generates_persists_and_reuses() {
+        let fs = MemFs::new();
+        let first = dev_guid(&fs).unwrap();
+        assert_eq!(first.len(), 36);
+        assert_eq!(first.match_indices('-').count(), 4);
+        assert!(first.chars().all(|c| c == '-' || (c.is_ascii_hexdigit() && !c.is_ascii_lowercase())));
+        assert_eq!(fs.get_file(DEV_GUID_PATH).unwrap(), first.as_bytes());
+        assert_eq!(dev_guid(&fs).unwrap(), first);
+    }
+
+    #[test]
+    fn dev_guid_respects_existing_file() {
+        let fs = MemFs::new();
+        fs.put_file(DEV_GUID_PATH, b"CAFE0000-0000-4000-8000-000000000042\n").unwrap();
+        assert_eq!(dev_guid(&fs).unwrap(), "CAFE0000-0000-4000-8000-000000000042");
+    }
+
+    #[test]
+    fn dev_guid_is_per_box_random() {
+        assert_ne!(dev_guid(&MemFs::new()).unwrap(), dev_guid(&MemFs::new()).unwrap());
+    }
 
     #[test]
     fn md5_matches_coreutils() {

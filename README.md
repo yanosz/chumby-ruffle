@@ -390,7 +390,7 @@ PLAYING 2.
 |-----|--------|------------------|------------------|
 | 5,160 | `_base64Encode(s)` | → base64 string | real implementation, in-table |
 | 5,161 | `_base64Decode(s)` | → decoded string | real implementation |
-| 5,162 | `_md5Sum(s)` | → md5 hex digest (GUID hashing) | constant marker digest (32 zeros) — observed call sites only compare a digest with itself; logged as a warning |
+| 5,162 | `_md5Sum(s)` | → md5 hex digest (GUID hashing) | real implementation (`real_ident::md5_hex`) |
 | 5,163 | `_blowfishEncrypt(plain, key[, mode])` | encrypt (mp3tunes credential store) | stub (the service is dead) |
 | 5,164 | `_blowfishDecrypt(crypto, key[, mode])` | decrypt | stub |
 

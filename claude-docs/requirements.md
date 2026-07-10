@@ -245,8 +245,16 @@ milestone — registration itself stays out, and the GUID still never leaves
 the process): the Info screen's `id:` and `HW#:` lines are real, replacing
 the crypto processor the original hardware read (`guidgen.sh` =
 `cpi.sh -p`, `chumby_version -n`). The seed is the SoC serial from
-`/proc/device-tree/serial-number` (falls back to `/etc/machine-id` on a dev
-box, then to the fixture). GUID = salted md5 of the serial as an uppercase
+`/proc/device-tree/serial-number`; a machine without one (dev box, CI)
+gets a random v4 GUID instead, generated at first start and persisted as
+`/psp/guid` in the virtual rootfs (gitignored) — per-box, stable across
+runs (decision 2026-07-10; a shared fixed GUID and, before that, an
+`/etc/machine-id` seed were both rejected). In-player generation is
+accepted *for the time being* (Jan, 2026-07-10): it may have to move once
+registration lands, so that a CI run can never present a registrable
+identity to chumby.com (NFR6). The fixture GUID remains the last resort
+when entropy or the rootfs write fails — a fixed answer beats one that
+changes every boot. GUID = salted md5 of the serial as an uppercase
 8-4-4-4-12 string; `HW#` = `<model>-<serial>` where model is "RPI3B"-style
 from `/proc/device-tree/model`, or "PC" elsewhere — the panel has no model
 field, so the tag rides on the serial line. `md5sum <path>` is computed
