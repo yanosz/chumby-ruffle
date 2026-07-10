@@ -245,9 +245,23 @@ committed, cached, or uploaded anywhere. The tracked fixture tree lacks the
 gitignored widget SWFs; the panel boots without them (the widget load fails
 with a non-fatal `FetchError`), which is what makes this work.
 
-Inherited upstream workflows are left untouched (they filter on `master`, or
-guard on the upstream repository name) so that future upstream merges stay
-conflict-free.
+Inherited upstream workflows are kept, not deleted, so that future upstream
+merges stay conflict-free. Most disable themselves on a fork already: the
+test/lint ones filter on `master`, which this fork never has, and the Crowdin
+and release ones guard their entry job on `github.repository ==
+'ruffle-rs/ruffle'`.
+
+`test_extension_dockerfile.yml` was the exception, and it bit us on
+2026-07-10. Its guard covered only the Discord-notify step, so the job itself
+ran — and scheduled runs use the default branch, which here is `chumby`. It
+builds the Firefox extension for `wasm32-unknown-unknown`, and **this fork
+does not compile for wasm32**: since the `chumby` cargo feature was removed
+(§6.3) `core/src/chumby` is always in the build, and `audio.rs` imports
+`std::os::unix::net::UnixStream` for the mpv IPC socket. Weekly red CI on a
+job about Docker, whose real cause was neither Docker nor the extension. The
+fix was to give its job the same repository guard the others carry. Any
+inherited workflow that runs on a schedule needs that guard: cron ignores
+branch filters.
 
 ## 6. Merging upstream
 
