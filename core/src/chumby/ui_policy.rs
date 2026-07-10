@@ -44,17 +44,12 @@ use crate::display_object::{DisplayObject, TDisplayObject, TDisplayObjectContain
 use crate::string::{AvmString, WString};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
-use swf::Fixed8;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Action {
     Hide,
     Disable,
     Readonly,
-    /// Flat-recolour the target (AVM1 `Color.setRGB` semantics: zero the RGB
-    /// multipliers, offset to the given `0xRRGGBB`). Used to repaint the
-    /// dashboard wifi meter blue as a wired "link up" indicator.
-    Tint(u32),
 }
 
 #[derive(Debug)]
@@ -119,14 +114,6 @@ fn parse(text: &str) -> Vec<Rule> {
             Some("hide") => Action::Hide,
             Some("disable") => Action::Disable,
             Some("readonly") => Action::Readonly,
-            Some("tint") => match entry.get("color").and_then(|v| v.as_str()).and_then(parse_hex_color) {
-                Some(rgb) => Action::Tint(rgb),
-                None => {
-                    tracing::warn!(target: "chumby_host",
-                        "ui-policy rule '{id}': tint needs a color = \"#RRGGBB\" — rule skipped");
-                    continue;
-                }
-            },
             other => {
                 tracing::warn!(target: "chumby_host",
                     "ui-policy rule '{id}': unknown action {other:?} — rule skipped");
@@ -204,9 +191,6 @@ fn resolve<'gc>(root: DisplayObject<'gc>, selector: &[Segment]) -> Resolution<'g
 /// idempotent, cheap, re-applies whenever a screen instance (re)appears.
 pub fn apply<'gc>(activation: &mut Activation<'_, 'gc>) {
     let rules = policy();
-    if rules.is_empty() {
-        return;
-    }
     if rules.is_empty() {
         return;
     }
@@ -296,32 +280,7 @@ fn apply_action<'gc>(
             let dynamic = AvmString::new_utf8(activation.gc(), "dynamic");
             set(activation, obj, "type", Value::String(dynamic));
         }
-        Action::Tint(rgb) => {
-            // Mirror AVM1 Color.setRGB (globals/color.rs): flat-fill the clip.
-            let [b, g, r, _] = (rgb as i32).to_le_bytes();
-            target.set_transformed_by_script(true);
-            if let Some(parent) = target.parent() {
-                parent.invalidate_cached_bitmap();
-            }
-            let mut ct = target.base().color_transform();
-            ct.r_multiply = Fixed8::ZERO;
-            ct.g_multiply = Fixed8::ZERO;
-            ct.b_multiply = Fixed8::ZERO;
-            ct.r_add = r.into();
-            ct.g_add = g.into();
-            ct.b_add = b.into();
-            target.set_color_transform(ct);
-        }
     }
-}
-
-/// Parse a `#RRGGBB` (or `RRGGBB`) hex colour to `0xRRGGBB`.
-fn parse_hex_color(s: &str) -> Option<u32> {
-    let hex = s.strip_prefix('#').unwrap_or(s);
-    if hex.len() != 6 {
-        return None;
-    }
-    u32::from_str_radix(hex, 16).ok()
 }
 
 #[cfg(test)]

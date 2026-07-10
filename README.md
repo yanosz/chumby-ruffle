@@ -108,7 +108,7 @@ screen's timezone picker and "set time from the internet" toggle should
 be visible but inert, while the 12/24-hour switch stays live. Rather
 than editing the panel or silently swallowing its input, the fork
 disables such controls from the outside: `core/src/chumby/ui-policy.toml`
-maps controls to actions (`hide`, `disable`, `readonly`, `tint`),
+maps controls to actions (`hide`, `disable`, `readonly`),
 reapplied continuously so re-entering a screen can't bring a control
 back. The rules are compiled into the player — this fork runs one SWF, so
 which of its controls are dead belongs here. Format and mechanism: the

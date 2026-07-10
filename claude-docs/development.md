@@ -59,7 +59,7 @@ Everything the fork adds is in `core/src/chumby/`:
 | `real_net.rs` | `RealNetHost`: live network state, wraps `FixtureHost` |
 | `avm.rs` | the `ASnative(5,N)` dispatch table |
 | `navigator.rs` | `exec://`, chumby HTTP, and `file://` interception |
-| `ui_policy.rs` | declarative disabling/tinting of panel controls |
+| `ui_policy.rs` | declarative disabling of panel controls |
 | `ui-policy.toml` | the rules themselves, compiled in with `include_str!` |
 | `audio.rs` | mpv backend over JSON IPC |
 | `input.rs` | control FIFO |
