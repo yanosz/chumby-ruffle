@@ -194,9 +194,7 @@ prior; the run tells you what actually fires.
   lighttpd serving ~10 static XML stubs and ~10 CGI scripts, keeps real
   internet radio flowing while mocking everything account-related, and serves
   widget SWFs over `file://` hrefs. We do the same thing inside the player
-  instead, because we own it. Its `defaultUpdateTime=9999` /
-  `defaultProfileTime=9999` profile parameters are the panel's own documented
-  way to quiet its polling loops.
+  instead, because we own it.
 - `/home/jan/chumby_backup` — a real Chumby Classic's rootfs (firmware 1.7.2,
   `ironforge`), read-only ground truth for what the environment looked like.
 
@@ -236,12 +234,10 @@ line. Audio-device failure on a headless machine is expected and non-fatal.
 that renders disabled but still fires, or a widget that loads but never
 paints.
 
-CI (`.github/workflows/chumby.yml`) builds on every push and PR to `chumby`,
-and additionally runs the movie-start check on push and manual dispatch —
-never on a PR, because that step needs the SWF (§1). Fixtures are in-repo;
-only `controlpanel.swf` is fetched, by rclone from a private share configured
-entirely through `RCLONE_CONFIG_RSHARE_*` secrets. The SWF is never
-committed, cached, or uploaded anywhere. The tracked fixture tree lacks the
+CI is `.github/workflows/chumby.yml`; what it runs where is §1. Fixtures are
+in-repo, so only `controlpanel.swf` is fetched, by rclone from a private
+share configured entirely through `RCLONE_CONFIG_RSHARE_*` secrets. The SWF
+is never committed, cached, or uploaded anywhere. The tracked fixture tree lacks the
 gitignored widget SWFs; the panel boots without them (the widget load fails
 with a non-fatal `FetchError`), which is what makes this work.
 
@@ -256,7 +252,7 @@ and release ones guard their entry job on `github.repository ==
 ran — and scheduled runs use the default branch, which here is `chumby`. It
 builds the Firefox extension for `wasm32-unknown-unknown`, and **this fork
 does not compile for wasm32**: since the `chumby` cargo feature was removed
-(§6.3) `core/src/chumby` is always in the build, and `audio.rs` imports
+(§3) `core/src/chumby` is always in the build, and `audio.rs` imports
 `std::os::unix::net::UnixStream` for the mpv IPC socket. Weekly red CI on a
 job about Docker, whose real cause was neither Docker nor the extension. The
 fix was to give its job the same repository guard the others carry. Any

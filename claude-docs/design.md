@@ -99,14 +99,8 @@ chumby.com. We generate one from the widgets we ship. Each widget carries a
 element the panel consumes (name, description, version, mode, access,
 `<movie href>`, optional `<thumbnail href>`); `chumby-widget-channel`
 wraps them in the `<widget_instance>`/`<profile>` envelope and writes
-`fixtures/http/xml.chumby.com/xml/profiles`. The panel reads only the named
-nodes it knows and ignores the rest, so the schema is loose and
-forward-compatible. `file://` hrefs are accepted for movies and thumbnails.
-
-The dashboard preview is a static JPEG per widget, `loadMovie`'d from the
-`<thumbnail href>` — `loadMovie` decodes an image as readily as a SWF, so
-this needs no second live render, which is what makes it compatible with
-the localCache path (§6).
+`fixtures/http/xml.chumby.com/xml/profiles`. The schema the panel accepts is
+loose (requirements FR6); the dashboard preview thumbnail is §6.
 
 ### RealNetHost
 
@@ -120,7 +114,8 @@ Sources: default-route interface and gateway from `/proc/net/route`; the
 interface's IPv4 and netmask from `getifaddrs`; DNS from `/etc/resolv.conf`;
 MAC from `/sys/class/net/<if>/address`. No shell (NFR2). `getifaddrs` needs
 `libc`, added target-gated under `[target.'cfg(unix)'.dependencies]`, with a
-`#[cfg(not(unix))]` stub so wasm keeps building.
+`#[cfg(not(unix))]` stub. (The gating predates the decision to drop the wasm
+target, NFR5; `audio.rs` is ungated and is what actually breaks wasm.)
 
 Earlier revisions used a UDP `local_addr` probe for the IP and a
 `/proc/net/route` hex parse for the netmask. Both were brittle;
@@ -175,12 +170,10 @@ and claims four kinds of URL:
 ## 5. UI policy
 
 Rules live in `core/src/chumby/ui-policy.toml` and are compiled in with
-`include_str!`, parsed on first use, applied from `avm::method` at frame
-cadence, idempotent. They are the fork's own, because which of the panel's
-controls are dead is a property of the panel and of what this player can
-honour — not of whoever packages it. The cost is that editing a rule needs
-a rebuild; `test_embedded_policy_parses` catches a typo at test time rather
-than as a control that silently stays live on the device.
+`include_str!` (FR9), parsed on first use, applied from `avm::method` at
+frame cadence, idempotent. The cost of compiling them in is that editing a
+rule needs a rebuild; `test_embedded_policy_parses` catches a typo at test
+time rather than as a control that silently stays live on the device.
 
 ```toml
 [[rule]]
@@ -261,9 +254,8 @@ reading. See requirements.md §3.
 
 ## 8. The patch surface
 
-New code lives in `core/src/chumby/`: `host.rs` (trait + registry),
-`fixture.rs`, `real_net.rs`, `avm.rs`, `navigator.rs`, `ui_policy.rs`,
-`audio.rs`, `input.rs`. Upstream files carry only this:
+New code lives in `core/src/chumby/`, file by file in
+[development.md](development.md) §2. Upstream files carry only this:
 
 | File | Change |
 |------|--------|
