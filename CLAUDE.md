@@ -20,6 +20,9 @@ Read `claude-docs/` before doing anything:
 
 Non-negotiable rules:
 
+- Work in this git repo. Do not work in the base-chumby repo, unless
+  explicitly asked to do so. Notably, this also holds for creating
+  feature branches.
 - **Never modify `controlpanel.swf` or any extracted SWF.** Control is
   exerted only from the Rust side: what natives return, what commands
   print, what files contain, what properties display objects carry.
