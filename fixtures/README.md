@@ -69,10 +69,16 @@ Format gotchas (cost a debugging round each on 2026-07-06):
   (`audio/mpeg`, or `audio/x-mpegurl` / `audio/x-scpls` for playlists) —
   without it `DirectURLPlayer.playStream()` silently does nothing.
 - `exec/`: GUID, MAC, healthy wired `network_status.sh`, full-bars
-  `signal_strength`, `chumby_version` h/s/f/n = 3.8 / 1.7.2 / 1.7.2 /
-  CHUMBYPI001, minimal `dcid`, quiet handlers for headphone_mgr /
-  widgetcache / musicsource / alarm-dismiss (`rm /psp/ifalarm`,
-  `reload_backup_alarm`) commands.
+  `signal_strength`, `chumby_version` h/s/f/n = 3.8 / 1.7.2 / 1830 /
+  CHUMBYPI001 (`-f` is the third dot-field of the device's
+  `/etc/firmware_build` 1.7.1830 — the original `chumby_version` Perl
+  script's behaviour), minimal `dcid`, quiet handlers for headphone_mgr /
+  widgetcache / musicsource commands. The backup-alarm commands
+  (`rm /psp/ifalarm`, `reload_backup_alarm`) are **not** fixtures — the
+  host implements them for real (`core/src/chumby/backup_alarm.rs`) — and
+  the GUID / `chumby_version -n` / `md5sum` fixtures are **fallbacks**:
+  `RealNetHost` answers them from the machine identity when a serial
+  source exists (`core/src/chumby/real_ident.rs`).
 - `http/`: authorize + chumbies + the widget-channel profile
   (`xml/profiles`). The profile is **generated** from the widget sidecars
   by `chumby-widget-channel` (repo root), not hand-edited — see

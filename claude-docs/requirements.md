@@ -91,15 +91,17 @@ exist. The ones on the boot path or on a screen in scope:
 
 | command | via | site | must return |
 |---------|-----|------|-------------|
-| `guidgen.sh` | `exec://` | F2:204 | GUID text (chomped, uppercased) |
+| `guidgen.sh` | `exec://` | F2:204 | GUID text (chomped, uppercased) — real, derived from the machine serial (FR10) |
 | `macgen.sh` | `exec://` | F2:245 | MAC text |
 | `network_status.sh` | `exec://` | F2:286 | `<network><configuration type ssid auth encryption/><interface ip netmask gateway nameserver1 nameserver2>[<error/>]</interface></network>` |
 | `signal_strength` | `exec://` + backtick | F2:8110, 27226 | `<wifi connected linkquality signalstrength/>` |
-| `chumby_version -h/-s/-f/-n` | backtick | F2:30551–66 | version strings |
-| `md5sum /tmp/.guidhash` | backtick | F2:1946 | `<md5>  <file>` |
+| `chumby_version -h/-s/-f/-n` | backtick | F2:30551–66 | version strings (`-h/-s/-f` fixtures = platform identity; `-n` real, FR10) |
+| `md5sum /tmp/.guidhash` | backtick | F2:1946 | `<md5>  <file>` — computed for real from the rootfs (FR10) |
 | `chumby_set_volume\|pan\|mute [n]` | backtick | F2:9456… | nothing, or the current value |
 | `sync_time_state.sh 0\|1` | `exec://` | F2:16755 | nothing |
 | `dcid -o` | backtick | F2:9597 | DCID XML |
+| `reload_backup_alarm` | backtick | F2:11981 | nothing (the watcher polls the file — FR13) |
+| `rm /psp/ifalarm; reload_backup_alarm` | backtick | F2:11986 | nothing, but **must really delete the file** (FR13) |
 
 The rest of the catalog — `ap_scan`, `start_network`, `restart_network`,
 `network_adapter_list.sh`, the firmware-update machinery, the intercom
@@ -238,6 +240,24 @@ deliberately empty — the panel renders a bare ssid line for unrecognized
 auth values, and reading the security mode would need nl80211 for a
 decorative suffix. Mechanism: [design.md](design.md) §7.
 
+**Device identity** (2026-07-10, pulled forward from the registration
+milestone — registration itself stays out, and the GUID still never leaves
+the process): the Info screen's `id:` and `HW#:` lines are real, replacing
+the crypto processor the original hardware read (`guidgen.sh` =
+`cpi.sh -p`, `chumby_version -n`). The seed is the SoC serial from
+`/proc/device-tree/serial-number` (falls back to `/etc/machine-id` on a dev
+box, then to the fixture). GUID = salted md5 of the serial as an uppercase
+8-4-4-4-12 string; `HW#` = `<model>-<serial>` where model is "RPI3B"-style
+from `/proc/device-tree/model`, or "PC" elsewhere — the panel has no model
+field, so the tag rides on the serial line. `md5sum <path>` is computed
+for real from the virtual rootfs. `hardware_version` stays `3.8` — platform
+identity gates panel behaviour and is not display text. Versions are
+platform identity too, answered from fixtures; ground truth for the values
+is the original device's `chumby_version` Perl script: `-s` prints
+`/etc/software_version` (`1.7.2`), `-f` prints the **third dot-field** of
+`/etc/firmware_build` (`1.7.1830` → `1830`) — a wrong `version_f.txt` had
+the Info screen showing 1.7.2 twice.
+
 ### FR11 — Audio
 
 `_playAudio` and the btplay control family drive a real audio backend
@@ -261,6 +281,40 @@ and says so in the log.
   over SSH. Pointer commands go through the same window→movie coordinate
   mapping as real input, one action per event-loop iteration (sliders need
   the sequence spread across ticks).
+
+### FR13 — Backup alarm: the dead-man beep
+
+Real hardware ran `chumbalarmd`, a standalone daemon whose job was to wake
+the user even when the primary alarm's content failed — its help text:
+*"will wake you with a loud beep if you don't respond to your primary
+alarm."* The typical failure it guards on the Pi: WLAN loss while a net
+stream is the alarm (mpv plays its ~5 s cache, sits silent for its 60 s
+network timeout, exits; the panel never notices — measured 2026-07-10).
+
+The contract is one file, owned by the panel (AlarmSet, F2:11952):
+`/psp/ifalarm` holds the fire time in epoch seconds (primary alarm +
+per-alarm `backupDelay` minutes); answering the ring screen deletes it. If
+the time passes while the file exists, the host **must** sound a loud tone —
+one that shares no fate with the primary playback: its own mpv child, a
+local tone source, no network on the path (`backup_alarm.rs`).
+
+Decisions (Jan, 2026-07-10, scoping A2 of the options ladder):
+- **In-process**, not a separate daemon: covers content failure, crash
+  (systemd restarts the player) and power loss (boot check), accepting that
+  a *hung* player kills the watcher with it. Proportionality: hangs have not
+  been observed on our player; chumbalarmd's full fate-independence bought
+  insurance against a flakiness we don't have.
+- **Missed-alarm boot path is in scope**: a fire time found already in the
+  past sounds immediately — unless older than **1 hour**, then it is a
+  stale leftover and is cleared silently.
+- **Fixed duration**, not until-dismissed: `/psp/backup_alarm_duration`
+  seconds (default 60) — the knob chumbalarmd also read; dismissal during
+  the tone stops it early.
+- Tone is `Klaxon.mp3` from the shipped alarmtones (local file), falling
+  back to an mpv-generated sine if missing; volume from
+  `/psp/backup_alarm_volume` (default 100), through mpv only — no
+  sink/hardware volume writes until the on-device check says it is too
+  quiet.
 
 ---
 
@@ -341,7 +395,6 @@ Carried forward, in the order they are expected to land.
 
 | Gap | Note |
 |-----|------|
-| Geek + intro buttons still live | The Info screen's `piButton` (the "π" geek trigger, `frame_2` ~27145) and `introButton` were recorded as disabled but no such rules were ever written. Geek is reachable, and the intro button cannot do anything on the localCache path. Two `disable` rules are owed. |
 | `_getDirectoryEntry` (5,320) | `RootFs::dir_entry` exists; the native still stubs "end of listing". Needed for USB/local-file music browsing. |
 | Brightness | The panel's `/proc/sys/sense1/brightness` writes and `_setLCDMute` (5,20) are not mapped to a real backlight. Blocked on display hardware that can dim. |
 | Intro widget | `playIntro` (F2:5289) loads `intro.swf` only through `_startSlave`, which we do not run. Since we own the interpreter, the fix is VM-level interception rather than reviving the slave system or editing the SWF. |

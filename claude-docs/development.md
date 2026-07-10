@@ -234,6 +234,17 @@ line. Audio-device failure on a headless machine is expected and non-fatal.
 that renders disabled but still fires, or a widget that loads but never
 paints.
 
+To exercise the backup alarm (FR13) without waiting for a real alarm: start
+the player, let it boot (~15 s — the panel rewrites `/psp/ifalarm` at boot,
+so arming earlier gets overwritten), then
+`date +%s > fixtures/rootfs/psp/ifalarm`. Within the 2 s poll the log shows
+"primary alarm unanswered — sounding", the Klaxon plays for
+`/psp/backup_alarm_duration` seconds, and the file is deleted. Write the
+duration/volume knobs first to keep a desktop test short and quiet.
+Verified this way 2026-07-10, including the panel-side arm (boot wrote
+`ifalarm` for an enabled `backup="1"` alarm) and dismissal (the panel's
+boot cleanup `rm` really deleted the file).
+
 CI is `.github/workflows/chumby.yml`; what it runs where is §1. Fixtures are
 in-repo, so only `controlpanel.swf` is fetched, by rclone from a private
 share configured entirely through `RCLONE_CONFIG_RSHARE_*` secrets. The SWF
@@ -297,6 +308,22 @@ Each of these cost real time.
   line and kills the session. Use `pkill -x`.
 - **Orphaned mpv.** SIGTERM on the player skips destructors, so its mpv
   child survives and keeps playing. Kill mpv too.
+- **mpv stalls silently on network loss.** Measured 2026-07-10 against a
+  local server that streamed 5 s of MP3 then held the socket open sending
+  nothing (a WLAN drop, as TCP sees it): audio stops when the ~5 s demuxer
+  cache drains, the process stays alive and *reports playing* for its 60 s
+  default `--network-timeout`, then exits. `poll_state` sees nothing until
+  the exit. Live stall signals, if ever needed: `paused-for-cache` /
+  `core-idle` over the IPC socket. This is the failure mode the backup
+  alarm (FR13) exists for.
+- **`AlarmSet.repair()` (F2:11811) force-resets alarm[0]** after every
+  parse: `_backup=true`, `_backupDelay=5`, `_duration=default`,
+  `_autoDismiss=false` — whatever `/psp/alarms` says. The first alarm
+  always carries a 5-minute backup; per-alarm backup settings only hold
+  from alarm[1] on. Cost an investigation round on 2026-07-10 (a
+  hand-edited `backupDelay="1"` that kept computing as 5 looked exactly
+  like an XML-attribute bug in our interpreter; insert/lookup tracing
+  proved the parse correct before the decompile gave up `repair()`).
 
 ## 8. Documentation
 

@@ -12,16 +12,19 @@
 //! - `navigator`: `NavigatorBackend` decorator intercepting `exec://` and
 //!   chumby HTTP endpoints
 //! - `audio`: mpv-backed player behind the audio native family
+//! - `backup_alarm`: the dead-man beep chumbalarmd provided on real hardware
 //! - `input`: simulated-input control channel (stdin + FIFO line commands)
 //! - `ui_policy`: declarative dim/disable of panel controls the host
 //!   platform does not support (rules compiled in from `ui-policy.toml`)
 
 pub mod audio;
 pub mod avm;
+pub mod backup_alarm;
 pub mod fixture;
 pub mod host;
 pub mod input;
 pub mod navigator;
+pub mod real_ident;
 pub mod real_net;
 pub mod ui_policy;
 

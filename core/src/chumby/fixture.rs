@@ -11,6 +11,7 @@
 //! call names the fixture file to create.
 
 use super::audio::{AudioPlayer, AudioState};
+use super::backup_alarm::BackupAlarm;
 use super::host::{self, ChumbyFs, ChumbyHost, HostError, HostValue};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -29,6 +30,8 @@ pub struct FixtureHost {
     native_state: Mutex<HashMap<&'static str, HostValue>>,
     /// mpv-backed audio player for alarm tones and URL streams.
     audio: Mutex<AudioPlayer>,
+    /// Watches /psp/ifalarm and sounds the dead-man tone (chumbalarmd's job).
+    backup_alarm: BackupAlarm,
 }
 
 impl FixtureHost {
@@ -57,7 +60,8 @@ impl FixtureHost {
             exec_manifest,
             slave_vars: Mutex::new(HashMap::new()),
             native_state: Mutex::new(initial_state),
-            audio: Mutex::new(AudioPlayer::new(rootfs_path)),
+            audio: Mutex::new(AudioPlayer::new(rootfs_path.clone())),
+            backup_alarm: BackupAlarm::start(rootfs_path),
             root,
         }
     }
@@ -279,6 +283,18 @@ impl ChumbyHost for FixtureHost {
     }
 
     fn exec(&self, command: &str) -> Result<Vec<u8>, HostError> {
+        // Backup-alarm protocol (AlarmSet, F2:11952): these two commands have
+        // real semantics, not fixtures. Dismissal must actually delete
+        // /psp/ifalarm or the dead-man tone would fire after every answered
+        // alarm. The bare reload is a no-op: the watcher polls the file.
+        if command.starts_with("rm /psp/ifalarm") {
+            let _ = std::fs::remove_file(self.fs.root.join("psp/ifalarm"));
+            self.backup_alarm.dismiss();
+            return Ok(Vec::new());
+        }
+        if command == "reload_backup_alarm" {
+            return Ok(Vec::new());
+        }
         for (prefix, file) in &self.exec_manifest {
             if command.starts_with(prefix.as_str()) {
                 return std::fs::read(file)
@@ -470,6 +486,27 @@ mod tests {
             std::fs::read_to_string(root.join("rootfs/psp/timezone")).unwrap(),
             "America/New_York"
         );
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// The panel's alarm dismissal (`rm /psp/ifalarm; reload_backup_alarm`,
+    /// AlarmSet F2:11986) must really delete the file — a canned fixture here
+    /// would leave the dead-man tone armed after every answered alarm.
+    #[test]
+    fn test_backup_alarm_dismissal_deletes_ifalarm() {
+        let root = std::env::temp_dir()
+            .join(format!("chumby-fixture-ifalarm-test-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("rootfs/psp")).unwrap();
+        let ifalarm = root.join("rootfs/psp/ifalarm");
+        // Far future so the watcher thread cannot fire during the test.
+        std::fs::write(&ifalarm, "4102444800").unwrap();
+
+        let host = FixtureHost::new(&root);
+        host.exec("reload_backup_alarm").unwrap();
+        assert!(ifalarm.exists(), "bare reload must not touch the file");
+        host.exec("rm /psp/ifalarm; reload_backup_alarm").unwrap();
+        assert!(!ifalarm.exists(), "dismissal must delete /psp/ifalarm");
 
         std::fs::remove_dir_all(&root).ok();
     }

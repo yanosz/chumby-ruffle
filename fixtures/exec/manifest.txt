@@ -10,8 +10,6 @@ chumby_version -n	version_n.txt
 dcid -o	dcid.xml
 md5sum /tmp/.guidhash	guidhash_md5.txt
 sync	empty.txt
-rm /psp/ifalarm	empty.txt
-reload_backup_alarm	empty.txt
 killall headphone_mgr	empty.txt
 mkdir /tmp/widgetcache	zero.txt
 nice -n 10 curl	empty.txt

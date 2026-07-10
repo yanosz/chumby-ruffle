@@ -269,6 +269,14 @@ before. The panel caches `networkType`/`ssid` from the boot-time
 `gotNetworkStatus`, so a network change under a running panel shows on the
 Info screen only after a player restart.
 
+`RealNetHost::exec` also carries the **device identity** touchpoints
+(requirements FR10), implemented in `real_ident.rs` with the same
+real-else-fixture contract: `guidgen.sh` (salted-md5 GUID of the machine
+serial), `chumby_version -n` (model tag + serial, e.g. `RPI3B-…`), and an
+honest `md5sum <path>` computed from the virtual rootfs — the panel md5s
+`/tmp/.guidhash` for its chumby.com auth parameters, all intercepted
+in-process.
+
 ## 8. The patch surface
 
 New code lives in `core/src/chumby/`, file by file in
@@ -305,6 +313,28 @@ remembering:
 
 Where mpv is absent the backend logs "audio will be a silent stub" and
 continues.
+
+### The backup alarm
+
+`backup_alarm.rs` is chumbalarmd reduced to its contract (requirements
+FR13): a thread polls `<rootfs>/psp/ifalarm` every 2 s; if the time in it
+passes while the file exists, delete the file and sound a Klaxon for the
+configured duration, via a dedicated mpv child. Polling the file — instead
+of arming a long sleep when the panel says so — is the design: the file is
+the single source of truth, so boot-time missed alarms and re-arms need no
+extra paths, and a wall-clock step (the Pi has no RTC) can never strand a
+computed sleep. Two exec commands are intercepted ahead of the fixture
+manifest in `FixtureHost::exec`: dismissal (`rm /psp/ifalarm; …`) really
+deletes the file and kills a sounding tone; the bare `reload_backup_alarm`
+is a no-op.
+
+The tone child is deliberately not `AudioPlayer`'s: no shared `child` slot,
+no IPC socket, no network source — the primary alarm failing (the mpv
+stall-on-WLAN-loss behaviour measured 2026-07-10: silent from cache-drain,
+alive for its 60 s network timeout, then exit; `paused-for-cache` over IPC
+is the live stall signal if we ever want a faster fallback) must not be
+able to take the beep down with it. PipeWire mixes the two if both are
+audible.
 
 ## 10. Input
 
