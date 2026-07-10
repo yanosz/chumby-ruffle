@@ -341,7 +341,6 @@ Carried forward, in the order they are expected to land.
 
 | Gap | Note |
 |-----|------|
-| Geek + intro buttons still live | The Info screen's `piButton` (the "π" geek trigger, `frame_2` ~27145) and `introButton` were recorded as disabled but no such rules were ever written. Geek is reachable, and the intro button cannot do anything on the localCache path. Two `disable` rules are owed. |
 | `_getDirectoryEntry` (5,320) | `RootFs::dir_entry` exists; the native still stubs "end of listing". Needed for USB/local-file music browsing. |
 | Brightness | The panel's `/proc/sys/sense1/brightness` writes and `_setLCDMute` (5,20) are not mapped to a real backlight. Blocked on display hardware that can dim. |
 | Intro widget | `playIntro` (F2:5289) loads `intro.swf` only through `_startSlave`, which we do not run. Since we own the interpreter, the fix is VM-level interception rather than reviving the slave system or editing the SWF. |
