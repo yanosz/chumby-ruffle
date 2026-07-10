@@ -39,15 +39,13 @@ Non-negotiable rules:
 - Reimplement device touchpoints in Rust, not by shipping shell scripts or
   shelling out. A principle, not a hard constraint — deviate with a reason,
   and say what it is.
-- Keep code comments brief. Comment only what the code cannot say: the
+- Keep code comments brief - avoid comments if possible. Comment only what the code cannot say: the
   why, a non-obvious constraint, a reference. Do not narrate the obvious.
 - One feature branch per working session. **Finishing the session means
   pushing it and opening the pull request** against `chumby` — do that
   yourself; leaving a pushed branch with no PR is unfinished work. CI only
   *builds* on a PR — the movie-start check runs after the merge, so run it
-  locally before opening one. Jan reviews and squash-merges. Note this
-  checkout's `origin` is a local clone, not GitHub: push to the GitHub URL
-  and pass `--repo yanosz/chumby-ruffle` to `gh`.
+  locally before opening one. Jan reviews and squash-merges.
 - Ask before iterating. When scope is ambiguous, one clarifying question
   beats an exploratory detour. A question from the user is a question, not
   an instruction to start coding.
