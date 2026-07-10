@@ -39,7 +39,7 @@ is routing data for them.
 | M1 | `ASnative(5,N)` table | ~140 vendor functions, registered before frame 1 runs. Stray `ASnative(4,39)` (`_batteryPower`) is bound but never called. |
 | M2 | `exec://` URL scheme | `XML.load("exec://CMD")` runs CMD; stdout becomes the loaded document (parsed as XML, or consumed raw via `onData`). |
 | M3 | `_backtick(cmd)` = `ASnative(5,52)` | Synchronous shell exec returning stdout as a string. Same command space as M2. |
-| M4 | `file://` loads | Directory listing (`XML.load("file://DIR")` → `<directory><file name=…/></directory>`, used by the music file finder and the geek browser) and plain file reads (`file:////LICENSES/gpl.txt`). Note the quirky multi-slash forms the panel emits: `file:///`, `file:////usr/...`. |
+| M4 | `file://` loads | Plain file reads (`file:////LICENSES/gpl.txt`) — implemented. Note the quirky multi-slash forms the panel emits: `file:///`, `file:////usr/...`. Directory listing (`XML.load("file://DIR")` → `<directory><file name=…/></directory>`) we do **not** implement: its only callers are the music file finder and the geek browser, both out of scope. |
 | M5 | FlashVars injection | `-Pname=value` root variables plus a player-supplied `$version`. |
 | M6 | Master/slave dual-movie system | Widgets and the intro run as a *second player instance* on an overlay, driven by natives 72–89, 110–119, 210–211, 330–332, 360–364, 380–387, with variables exchanged through `_setSlaveVar`/`_getSlaveVar`. **We do not implement this** — see FR7. |
 
@@ -162,23 +162,24 @@ movies and thumbnails.
 
 ### FR7 — Reach the main screen without a server, without the slave player
 
-Two decisions collapse most of the work:
+One decision collapses most of the work: **`localCache=1`**. The panel then
+renders widgets *in-movie* via `loadMovie` instead of handing them to a
+slave player instance. The master/slave system (FR2 M6) therefore stays a
+set of logging stubs, with `_getSlaveVar("_chumby_widget_done")` returning
+`"true"` so handoffs never hang.
 
-- **`localCache=1`**: the panel then renders widgets *in-movie* via
-  `loadMovie` instead of handing them to a slave player instance. The
-  master/slave system (FR2 M6) therefore stays a set of logging stubs, with
-  `_getSlaveVar("_chumby_widget_done")` returning `"true"` so handoffs never
-  hang.
-- **`builtin=1`**: the panel's own dispatcher reaches the `main` frame once
-  (a) network status reports healthy and (b) the clock is sane. Both are
-  environment answers. No Rust-side frame control or variable injection is
-  needed — the wizard skip is "the panel believes the network is up".
+Nothing else is injected. The panel's own dispatcher takes its normal device
+path (`validate` → `main`) once (a) network status reports healthy and
+(b) the clock is sane — both environment answers, so the wizard skip is "the
+panel believes the network is up" rather than any Rust-side frame control.
+(`-Pbuiltin=1` exists in the panel and jumps straight to its offline clock,
+bypassing `validate`. It is a debug shortcut, not the path we ship.)
 
 `--load-behavior blocking` is mandatory: stock Ruffle's default streaming
-load makes `gotoAndStop("builtin")` fail with *frame label not found*,
-because `dispatch()` runs from frame 2 before later frames are parsed. The
-real chumby player loads the whole file first, so blocking is also the
-faithful behavior.
+load makes `dispatch()`'s `gotoAndStop` fail with *frame label not found*,
+because it runs from frame 2 before later frames are parsed. The real chumby
+player loads the whole file first, so blocking is also the faithful
+behavior.
 
 ### FR8 — Keep the environment swappable
 
@@ -196,21 +197,15 @@ only one local channel, and the social buttons. They must be *visibly*
 disabled rather than silently ignored — a control that looks live but does
 nothing is the worst outcome, especially around alarms.
 
-Requirements on the mechanism:
+Requirements on the mechanism (how it is built: [design.md](design.md) §5):
 
-- **Stable element identification.** Instance paths are not uniformly
-  stable: unnamed instances get AVM1 auto-names (`instanceN`) from a global
-  counter that depends on navigation history. Depths, in contrast, are
-  authored into the SWF. So each element needs a list of selector
-  alternatives, tried in order, first match wins; an unresolved primary
-  selector is a logged WARNING, never a silent no-op.
+- **Stable element identification**, robust against the AVM1 auto-names that
+  depend on navigation history. An element that cannot be resolved is a
+  logged WARNING, never a silent no-op.
 - **Type-generic actions**, operating at the display-object level so no
-  assumption is made about the control's class: `hide` (`_visible = false`),
-  `disable` (`enabled = false` on the target *and its children*, because
-  AVM1 `enabled` does not cascade and the hit handlers sit on inner clips —
-  plus a lowered `_alpha` so the state reads as "shown, not changeable"),
-  `readonly` (input TextField → dynamic/unselectable), and `tint` (an AVM1
-  color transform).
+  assumption is made about the control's class: `hide`, `disable`,
+  `readonly`, `tint`. A disabled control must read as "shown, not
+  changeable".
 - **Idempotent re-application**, because the SWF re-initializes controls on
   screen entry (`fixButtons()`).
 - **Rules are declarative data, owned by this repository.** Which of the
@@ -233,10 +228,8 @@ must report real link quality on wifi and real link state on ethernet. When
 nothing is connected, the reader yields nothing and the fixture answers
 instead, so a desktop or CI run with no usable network behaves as before.
 
-> **Open defect.** `real_net.rs` still emits a constant `type="lan"` and a
-> constant `connected=1 linkquality=100`, and the ethernet tint is applied
-> by a static rule. See [design.md](design.md) §7 for what exists today and
-> what has to change.
+> **Not yet met.** `real_net.rs` still reports a constant interface type and
+> a constant signal. See §3 and [design.md](design.md) §7.
 
 ### FR11 — Audio
 
@@ -308,10 +301,10 @@ logging is the only runtime visibility into native usage.
 
 ### NFR5 — Targets
 
-Linux amd64 (desktop development) and aarch64 (Raspberry Pi 3B+). The wasm
-build must keep compiling: platform-specific code is `#[cfg(unix)]`-gated
-with a stub for everything else. Nothing may hardcode the display
-resolution — the panel hardcodes its own layout at 320×240 (F2:2278) but
+Linux amd64 (desktop development) and aarch64 (Raspberry Pi 3B+). Upstream's
+wasm target is **not** one of ours — `audio.rs` needs a Unix socket for mpv,
+so `ruffle_core` no longer builds for `wasm32` (development.md §5). Nothing
+may hardcode the display resolution — the panel hardcodes its own layout at 320×240 (F2:2278) but
 forwards `System.capabilities.screenResolutionX/Y` to widgets, and the real
 device runs 480×320.
 
@@ -342,7 +335,7 @@ Carried forward, in the order they are expected to land.
 | Gap | Note |
 |-----|------|
 | Geek + intro buttons still live | The Info screen's `piButton` (the "π" geek trigger, `frame_2` ~27145) and `introButton` were recorded as disabled but no such rules were ever written. Geek is reachable, and the intro button cannot do anything on the localCache path. Two `disable` rules are owed. |
-| Network type hardcoded (FR10) | `real_net.rs` reports constant `type="lan"` and constant full signal; the ethernet tint is a static rule. Must derive from `/sys/class/net/<if>/wireless/`; wifi SSID needs nl80211 (sysfs has none), signal comes from `/proc/net/wireless`. |
+| Network type hardcoded (FR10) | `real_net.rs` reports constant `type="lan"` and constant full signal; the ethernet tint is a static rule. What has to change: [design.md](design.md) §7. |
 | Static-field audit (FR10) | Sweep the whole `network_status.sh` + `signal_strength` output for any other value that is not read from live state. |
 | `_getDirectoryEntry` (5,320) | `RootFs::dir_entry` exists; the native still stubs "end of listing". Needed for USB/local-file music browsing. |
 | Brightness | The panel's `/proc/sys/sense1/brightness` writes and `_setLCDMute` (5,20) are not mapped to a real backlight. Blocked on display hardware that can dim. |

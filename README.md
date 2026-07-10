@@ -24,12 +24,12 @@ knows nothing about:
 - **The device filesystem** — it keeps its state as files under paths
   like `/psp` and `/tmp`.
 
-The fork answers all three from a swappable **virtual chumby** instead of
-the real system: vendor calls, command output, and files are served from
-a fixtures directory rather than touching hardware or the host. Nothing
-the panel does reaches the machine it actually runs on. The result
-behaves like a real chumby — the clock plays, alarms ring, radio
-streams, and settings persist.
+The fork answers all three from a swappable **virtual chumby**: vendor
+calls, command output, and files are served from a fixtures directory
+rather than from real hardware. Only where a canned answer would lie does
+the player consult the machine it runs on — the network diagnostics read
+live kernel state, and audio really plays. The result behaves like a real
+chumby: the clock plays, alarms ring, radio streams, and settings persist.
 
 ## The code
 
@@ -39,6 +39,7 @@ All chumby code lives in `core/src/chumby/`:
 |------|--------------|
 | `host.rs` | the `ChumbyHost` trait — the boundary between the panel and its environment |
 | `fixture.rs` | the fixtures-backed host and its virtual filesystem |
+| `real_net.rs` | overlays the network calls with live kernel state |
 | `avm.rs` | the vendor-function table |
 | `navigator.rs` | intercepts the panel's `exec://` and chumby.com requests |
 | `audio.rs` | plays audio through mpv |
@@ -60,11 +61,12 @@ verify and merge upstream — see `claude-docs/`
 
 Everything the panel asks of its environment passes through one trait,
 `ChumbyHost`, with a method per kind of traffic: vendor calls, shell
-execution, URL fetches, and filesystem access. Today the only
-implementation is `FixtureHost`, which answers from a fixtures directory
-(`--chumby-fixtures`). Because the boundary is this narrow, a later host
-could map the same calls onto real Pi hardware — backlight, sound,
-clock — without changing anything else.
+execution, URL fetches, and filesystem access. `FixtureHost` answers all
+four from a fixtures directory (`--chumby-fixtures`). Because the boundary
+is this narrow, a host that reports something real can be layered on top of
+it: `RealNetHost` does exactly that, overriding the network calls with live
+kernel state and delegating the rest. The same seam is how a future host
+would reach the Pi's backlight or clock.
 
 Every host call is logged, and that is the project's working loop: when
 the panel asks for something the fixtures don't answer, **the log line

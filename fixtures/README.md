@@ -21,7 +21,8 @@ cargo run -p ruffle_desktop -- \
 ```
 
 (`--load-behavior blocking` is required: Ruffle's default streaming load
-breaks `gotoAndStop` to late frame labels — gap analysis G3.)
+breaks `gotoAndStop` to late frame labels — `claude-docs/requirements.md`
+FR7.)
 
 Audio (`_playAudio` family) plays through **mpv** if installed; without it
 the state machine still answers correctly but stays silent. Set
@@ -75,7 +76,7 @@ Format gotchas (cost a debugging round each on 2026-07-06):
 - `http/`: authorize + chumbies + the widget-channel profile
   (`xml/profiles`). The profile is **generated** from the widget sidecars
   by `chumby-widget-channel` (repo root), not hand-edited — see
-  `claude-docs/design.md` §3. Plus "no update", empty
+  `claude-docs/design.md` §2. Plus "no update", empty
   external music sources, inert FM radio.
 - `widgets/`: one `<name>.swf` per widget plus its `<name>.widget.xml`
   metadata sidecar (the `<widget>` element the panel reads). The generator
@@ -85,9 +86,8 @@ Format gotchas (cost a debugging round each on 2026-07-06):
   optional `<thumbnail href>` sidecar child points at an 80×60 `<name>.jpg`
   preview the panel `loadMovie`s into the dashboard bar (W2); the JPEGs are
   chumby widget artwork, so — like the SWFs — they are gitignored and
-  provided locally (render one from the widget with the `exporter` tool,
-  `claude-docs/design.md` §3). A widget without a
-  thumbnail sidecar simply shows no preview.
+  provided locally (render one from the widget with the `exporter` tool).
+  A widget without a thumbnail sidecar simply shows no preview.
 
 With these, the unmodified 2.8.87b3 panel boots the real device path
 (authorize → validate → normal operation) and plays the Unsubscribed Clock.
