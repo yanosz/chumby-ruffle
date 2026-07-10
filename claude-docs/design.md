@@ -178,7 +178,7 @@ time rather than as a control that silently stays live on the device.
 ```toml
 [[rule]]
 id        = "clock-ntp-toggle"
-action    = "disable"                    # hide | disable | readonly | tint
+action    = "disable"                    # hide | disable | readonly
 selectors = [
   "controlPanel/depth:15/depth:1/name:timePanel/name:ntpButton",
   "controlPanel/depth:15/depth:1/depth:1/depth:46",
@@ -203,9 +203,9 @@ acquired / parent-only / gone.
 `disable` sets `enabled = false` on the target **and its direct children**,
 then dims `_alpha` to ~45. The child pass is not belt-and-braces: AVM1
 `enabled` does not cascade, and every chumby button puts its hit handler on
-an inner clip (`box` on a checkbox, `b` on a sprite button). `tint` applies
-a flat color transform, the same `new Color(mc).setRGB(…)` idiom the panel
-uses on its own buttons.
+an inner clip (`box` on a checkbox, `b` on a sprite button). (A fourth
+action, `tint`, existed for I3's blue "wired ethernet" bar and was removed
+with it — see §7.)
 
 **Why properties and not something else.** Bytecode patching at load is
 fragile across panel variants and violates the spirit of FR1. Renderer-side
@@ -237,20 +237,37 @@ second live render. `loadMovie` decodes a JPEG as readily as a SWF.
 
 `signal_strength` drives the dashboard's only network element, a five-bar
 `WifiIndicator` meter (level = `(linkquality − 50) × 2`, hidden when
-`connected != 1`). There is **no ethernet icon anywhere in the SWF**, so on a
-wired link the meter is repurposed: full bars, recoloured to a distinct
-non-wifi blue by a `tint` rule on the parent indicator (tinting a child bar
-would be undone by its own `gotoAndStop`). The Info screen states
-`type: Ethernet` alongside, so the display is honest rather than clever.
+`connected != 1`), and the Info screen's "link quality" line. `RealNetHost`
+decides wireless-vs-wired from the default-route interface
+(`/sys/class/net/<if>/wireless/` exists ⟺ wireless) and reports
+`type="wlan"` or `type="lan"` accordingly.
 
-**This is where the open defect lives.** The type is currently a constant.
-The reader must instead decide wireless-vs-wired from the default-route
-interface (`/sys/class/net/<if>/wireless/` exists ⟺ wireless), report
-`type="wlan"` or `type="lan"` accordingly, and let both the indicator colour
-and the Info screen's signal line follow that. On wifi, SSID needs nl80211 —
-sysfs does not expose it — and link quality comes from `/proc/net/wireless`.
-The static `wired-eth-bar` tint rule has to become conditional on the same
-reading. See requirements.md §3.
+On wifi: link quality, signal and noise come from `/proc/net/wireless`
+(brcmfmac reports quality on a 0–70 scale, converted to the percent the
+panel expects; noise is the driver's value even when it is the −256
+"unknown" sentinel). The SSID comes from the `SIOCGIWESSID`
+wireless-extensions ioctl — *not* nl80211 as once planned: wext compat is
+the same cfg80211 layer that populates `/proc/net/wireless`, verified on
+the Pi's brcmfmac. `auth`/`encryption` stay empty; the panel renders a bare
+ssid line for any auth value it does not recognize, and reading the
+security mode would cost nl80211 plumbing for a decorative suffix.
+
+On a wired link the answer is `connected="0"` and the meter hides. There is
+**no ethernet icon anywhere in the SWF** — the meter is a wifi meter — so
+the wired diagnostics (type Ethernet, IP, gateway, DNS) live on the Info
+screen instead. This replaces I3's earlier repurposing (full bars tinted
+blue by a `wired-eth-bar` rule), which was unconditional — the bar stayed
+blue after the device moved to wifi — and whose honest fix (a runtime
+condition plus tint un-apply in the policy engine) was judged
+disproportionate for a minor indicator (user 2026-07-10). The `tint` action
+went with it.
+
+The readers are always on, with no flag or configuration: whenever a default
+route exists they answer, and with no route they return `None` and the
+fixture answers, so a desktop/CI run with no usable network behaves as
+before. The panel caches `networkType`/`ssid` from the boot-time
+`gotNetworkStatus`, so a network change under a running panel shows on the
+Info screen only after a player restart.
 
 ## 8. The patch surface
 
@@ -262,7 +279,7 @@ New code lives in `core/src/chumby/`, file by file in
 | `core/src/lib.rs` | `pub mod chumby;` |
 | `core/src/avm1/globals/asnative.rs` | `5 => chumby::avm::method` match arm (+ the `ASnative(4,39)` collision note) |
 | `core/src/player.rs` | click-target diagnostic in `run_mouse_pick`, silent unless `chumby_pick=debug`; body split into `run_mouse_pick_inner` |
-| `core/Cargo.toml` | `toml` (ui-policy parsing) and target-gated `libc` (getifaddrs) |
+| `core/Cargo.toml` | `toml` (ui-policy parsing) and target-gated `libc` (getifaddrs, SIOCGIWESSID) |
 | `desktop/src/player.rs` | `ChumbyNavigator` wrap before `.with_navigator(…)` |
 | `desktop/src/cli.rs` | `--chumby-fixtures <PATH>`, `--chumby-control <FIFO>` |
 | `desktop/src/main.rs` | host init, `input::spawn` |

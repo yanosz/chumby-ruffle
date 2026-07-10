@@ -204,7 +204,7 @@ Requirements on the mechanism (how it is built: [design.md](design.md) §5):
   logged WARNING, never a silent no-op.
 - **Type-generic actions**, operating at the display-object level so no
   assumption is made about the control's class: `hide`, `disable`,
-  `readonly`, `tint`. A disabled control must read as "shown, not
+  `readonly`. A disabled control must read as "shown, not
   changeable".
 - **Idempotent re-application**, because the SWF re-initializes controls on
   screen entry (`fixButtons()`).
@@ -223,13 +223,20 @@ after the device moved to wifi.
 
 Concretely, the network touchpoints must report the real default-route
 interface, its real type (wireless iff `/sys/class/net/<if>/wireless/`
-exists), real IPv4, netmask, gateway, DNS and MAC; and `signal_strength`
-must report real link quality on wifi and real link state on ethernet. When
-nothing is connected, the reader yields nothing and the fixture answers
-instead, so a desktop or CI run with no usable network behaves as before.
+exists), real IPv4, netmask, gateway, DNS and MAC; on wifi,
+`signal_strength` must report real link quality, signal and SSID. On a
+wired link `signal_strength` answers `connected="0"` — the dashboard meter
+is a wifi meter and hides; the Info screen carries the wired diagnostics
+(decision 2026-07-10, replacing the earlier blue-tinted-bars repurposing as
+disproportionate). When nothing is connected, the reader yields nothing and
+the fixture answers instead, so a desktop or CI run with no usable network
+behaves as before.
 
-> **Not yet met.** `real_net.rs` still reports a constant interface type and
-> a constant signal. See §3 and [design.md](design.md) §7.
+Static-field audit (2026-07-10): every attribute of `network_status.sh` and
+`signal_strength` is now live except `auth`/`encryption`, which are
+deliberately empty — the panel renders a bare ssid line for unrecognized
+auth values, and reading the security mode would need nl80211 for a
+decorative suffix. Mechanism: [design.md](design.md) §7.
 
 ### FR11 — Audio
 
@@ -335,8 +342,6 @@ Carried forward, in the order they are expected to land.
 | Gap | Note |
 |-----|------|
 | Geek + intro buttons still live | The Info screen's `piButton` (the "π" geek trigger, `frame_2` ~27145) and `introButton` were recorded as disabled but no such rules were ever written. Geek is reachable, and the intro button cannot do anything on the localCache path. Two `disable` rules are owed. |
-| Network type hardcoded (FR10) | `real_net.rs` reports constant `type="lan"` and constant full signal; the ethernet tint is a static rule. What has to change: [design.md](design.md) §7. |
-| Static-field audit (FR10) | Sweep the whole `network_status.sh` + `signal_strength` output for any other value that is not read from live state. |
 | `_getDirectoryEntry` (5,320) | `RootFs::dir_entry` exists; the native still stubs "end of listing". Needed for USB/local-file music browsing. |
 | Brightness | The panel's `/proc/sys/sense1/brightness` writes and `_setLCDMute` (5,20) are not mapped to a real backlight. Blocked on display hardware that can dim. |
 | Intro widget | `playIntro` (F2:5289) loads `intro.swf` only through `_startSlave`, which we do not run. Since we own the interpreter, the fix is VM-level interception rather than reviving the slave system or editing the SWF. |

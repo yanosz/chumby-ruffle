@@ -112,16 +112,3 @@ selectors = ["controlPanel/name:mainButtons/name:sendButton"]
 id        = "main-rate"
 action    = "disable"
 selectors = ["controlPanel/name:mainButtons/name:rateButton"]
-
-# WIRED ETHERNET indicator (I3, 2026-07-08). The dashboard/main-bar network
-# glyph is the WifiIndicator (class frame_2:8060) — a 5-bar wifi meter placed
-# UNNAMED at depth 136 in mainButtons (DS784). On a wired link the host reports
-# signal_strength connected=1/full (5 bars shown) and this rule recolours them
-# a distinct blue = "wired, link up". `tint` = AVM1 Color.setRGB (flat-fill).
-# KNOWN DEFECT: this rule is unconditional, so the bar stays blue on wifi too.
-# It must become conditional once real_net.rs reports the true interface type.
-[[rule]]
-id        = "wired-eth-bar"
-action    = "tint"
-color     = "#1E90FF"
-selectors = ["controlPanel/name:mainButtons/depth:136"]
