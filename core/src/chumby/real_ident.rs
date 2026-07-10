@@ -114,7 +114,7 @@ pub fn md5sum_line(content: &[u8], path: &str) -> String {
     format!("{}  {path}\n", md5_hex(content))
 }
 
-fn md5_hex(data: &[u8]) -> String {
+pub(crate) fn md5_hex(data: &[u8]) -> String {
     let digest = Md5::digest(data);
     digest.iter().map(|b| format!("{b:02x}")).collect()
 }

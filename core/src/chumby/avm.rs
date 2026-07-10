@@ -178,13 +178,8 @@ fn dispatch<'gc>(
         161 => HostValue::String(
             String::from_utf8_lossy(&base64_decode(&str_arg(0))).into_owned(),
         ),
-        // (5,162) _md5Sum(s): real digest deferred; constant marker keeps boot
-        // paths alive (only equality-with-itself matters in observed call
-        // sites).
-        162 => {
-            tracing::warn!(target: "chumby_host", "_md5Sum stub returning marker digest");
-            HostValue::String("00000000000000000000000000000000".into())
-        }
+        // (5,162) _md5Sum(s) -> hex digest
+        162 => HostValue::String(super::real_ident::md5_hex(str_arg(0).as_bytes())),
 
         // --- Everything else: host state or logging default ---
         _ => host.native(index, name, host_args),
