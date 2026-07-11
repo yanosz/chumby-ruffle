@@ -39,7 +39,7 @@ is routing data for them.
 | M1 | `ASnative(5,N)` table | ~140 vendor functions, registered before frame 1 runs. Stray `ASnative(4,39)` (`_batteryPower`) is bound but never called. |
 | M2 | `exec://` URL scheme | `XML.load("exec://CMD")` runs CMD; stdout becomes the loaded document (parsed as XML, or consumed raw via `onData`). |
 | M3 | `_backtick(cmd)` = `ASnative(5,52)` | Synchronous shell exec returning stdout as a string. Same command space as M2. |
-| M4 | `file://` loads | Plain file reads (`file:////LICENSES/gpl.txt`) — implemented. Note the quirky multi-slash forms the panel emits: `file:///`, `file:////usr/...`. Directory listing (`XML.load("file://DIR")` → `<directory><file name=…/></directory>`) we do **not** implement: its only callers are the music file finder and the geek browser, both out of scope. |
+| M4 | `file://` loads | Plain file reads (`file:////LICENSES/gpl.txt`) — implemented. Note the quirky multi-slash forms the panel emits: `file:///`, `file:////usr/...`. Directory listing (`XML.load("file://DIR")` → `<directory><file name=…/></directory>`) we do **not** implement: its only callers are the geek browser (out of scope) and `MP3FilesPanelScanner`, which sits on a dead music-panel frame (`xmp3files`, renamed away) — the *live* music finder is `FileFinderPOSIX` on `_getDirectoryEntry` (confirmed in the tag dump, 2026-07-10). |
 | M5 | FlashVars injection | `-Pname=value` root variables plus a player-supplied `$version`. |
 | M6 | Master/slave dual-movie system | Widgets and the intro run as a *second player instance* on an overlay, driven by natives 72–89, 110–119, 210–211, 330–332, 360–364, 380–387, with variables exchanged through `_setSlaveVar`/`_getSlaveVar`. **We do not implement this** — see FR7. |
 
@@ -62,6 +62,14 @@ The families that must behave *sensibly*, not merely exist:
 - **Filesystem** — `_getFile` (5,50), `_putFile` (5,51), `_fileExists`
   (5,53), `_fileSize` (5,54), `_unlink` (5,55), `_getDirectoryEntry`
   (5,320). 59 + 50 + 63 static call sites respectively; used on every screen.
+  `_getDirectoryEntry(obj, path, index)` fills `obj` with `_name`, `_path`,
+  `_isDir`, `_isDirLink`, `_isFile` and returns 1 / 0 / −1 (entry / end of
+  listing / invalid path). The panel iterates ascending indices, resumable
+  across frames (`FileFinderPOSIX`, 200 per frame), so listing order must be
+  stable call-to-call; all filtering — dotfiles, directory symlinks
+  (`_isDirLink`, its loop protection), `usb-*` mounts, music extensions —
+  is the panel's own. This native is what drives Music → My Music Files
+  and the mp3files alarm browser (USB/local music, delivered 2026-07-11).
 - **Shell** — `_backtick` (5,52), 50 call sites.
 - **Slave lifecycle** — 5,80–89, 110–119. `_getSlaveVar("_chumby_widget_done")`
   **must eventually return `"true"`** or the panel hangs waiting for the
@@ -122,7 +130,14 @@ All persistence is plain files — there is no SharedObject and no AMF
 anywhere in the panel, so no AMF0 fixtures are needed. Reads and writes must
 be confined to a virtual root (the panel can be directed at arbitrary paths
 through `/mnt/usb/externalmusic.xml`, so confinement is a security
-requirement, not a convenience).
+requirement, not a convenience). `externalmusic.xml` itself — the panel's
+plugin hook: a stick may declare extra music sources, each with a SWF panel
+the player loads — **stays faithful** (decision 2026-07-10, Jan): it only
+affects the user's own stick, and confinement plus the fixed exec catalog
+bound what such a panel can reach. The chumby treats USB as read-only media
+(no `_putFile`/`_unlink` to `/mnt` anywhere in the panel; the
+widgetcache-on-USB opt-in is not our path), so a read-only mount is
+faithful.
 
 - **`/psp`** (persistent): `firsttime` (writing `"0"` ends the wizard),
   `clock_format`, `touchclick`, `dimlevel` (`"2"` boots into night mode),
@@ -133,13 +148,22 @@ requirement, not a convenience).
 - **`/tmp`** (volatile): `movieheartbeat`, `nightmode`, `.guidhash`,
   `channel_names`, `widget_names`, `currentProfileID`, `currentProfileName`,
   `controlpanelversion`, `change_profile` (polled — an external
-  profile-switch request), `widgetcache/`.
+  profile-switch request), `widgetcache/`. Real hardware's `/tmp` is a
+  ramdisk; our rootfs persists it, and the difference is observable:
+  a surviving `/tmp/musicsource` makes the Music panel offer a resume
+  PLAY that is inert for mp3files (`resumeFrom()` replays an in-memory
+  track list a fresh process doesn't have — found 2026-07-11). The host
+  deletes `musicsource` at start; full `/tmp` volatility is a §3 gap.
 - **Device files**: `/proc/sys/sense1/brightness` (write, 0–65535),
   `/var/run/btplay.pid`, `/etc/{hardware,software}_version`,
   `/etc/firmware_build`, `/LICENSES/{gpl,lgpl}.txt`,
   `/usr/chumby/alarmtones/<name>.mp3`, `/usr/widgets/intro.swf`.
 - **`/mnt`**: `usb`, `usb2..4`, `storage` existence probes and their
-  contents (alarm sounds, `post_alarm_action`, update images, widget cache).
+  contents (music files, alarm sounds, `post_alarm_action`, update images,
+  widget cache). `mnt/usb/` in the fixture tree carries generated sine-tone
+  MP3s (nothing copyrighted — committed) so desktop and CI runs always have
+  a browsable music tree; on the Pi the appliance replaces it with a symlink
+  to the real USB automount. `usb2..4`/`storage` stay honestly absent.
 
 ### FR6 — Answer the panel's HTTP traffic in-process
 
@@ -403,7 +427,7 @@ Carried forward, in the order they are expected to land.
 
 | Gap | Note |
 |-----|------|
-| `_getDirectoryEntry` (5,320) | `RootFs::dir_entry` exists; the native still stubs "end of listing". Needed for USB/local-file music browsing. |
+| `/tmp` volatility | Real hardware's `/tmp` is a ramdisk, wiped per boot; the virtual rootfs persists it. The one observable consequence (stale `/tmp/musicsource` → inert resume PLAY) is fixed pointwise — the host deletes that file at start. Clearing all of `/tmp` at start would be faithful, but collides with the boot machinery: `chumby-widget-channel` pre-writes `currentProfileID/Name` there before the player starts, and seven committed fixtures live there. A session of its own, if ever. |
 | Brightness | The panel's `/proc/sys/sense1/brightness` writes and `_setLCDMute` (5,20) are not mapped to a real backlight. Blocked on display hardware that can dim. |
 | Intro widget | `playIntro` (F2:5289) loads `intro.swf` only through `_startSlave`, which we do not run. Since we own the interpreter, the fix is VM-level interception rather than reviving the slave system or editing the SWF. |
 | `clock_format` live update | The 12/24h toggle persists to `/psp/clock_format`, but a running widget only reads it at start. Real hardware pushes `_setSlaveVar("_chumby_clock_format", …)` every heartbeat; the in-movie path has no slave-var bridge. Recorded, no fix planned. |

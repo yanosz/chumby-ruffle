@@ -12,7 +12,7 @@
 
 use super::audio::{AudioPlayer, AudioState};
 use super::backup_alarm::BackupAlarm;
-use super::host::{self, ChumbyFs, ChumbyHost, HostError, HostValue};
+use super::host::{self, ChumbyFs, ChumbyHost, DirEntry, DirEntryResult, HostError, HostValue};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -44,6 +44,14 @@ impl FixtureHost {
         let exec_manifest = load_exec_manifest(&root.join("exec"));
         tracing::info!(target: "chumby_host",
             "FixtureHost at {} ({} exec fixtures)", root.display(), exec_manifest.len());
+
+        // Real hardware's /tmp is a ramdisk; ours persists. The resume
+        // banner (/tmp/musicsource) must not survive a restart:
+        // MP3FilesPlayer.resumeFrom replays an in-memory track list a
+        // fresh process doesn't have, leaving a live-looking PLAY button
+        // inert (found 2026-07-11). Full /tmp volatility is a recorded
+        // gap (requirements §3).
+        let _ = std::fs::remove_file(rootfs_path.join("tmp/musicsource"));
 
         // Seed volume from the persisted /psp/volume fixture so that
         // _getSystemVolume returns the last saved level after a restart.
@@ -439,22 +447,110 @@ impl ChumbyFs for RootFs {
         std::fs::remove_file(p).map_err(HostError::Io)
     }
 
-    fn dir_entry(&self, path: &str, index: u32) -> Option<(String, bool)> {
-        let dir = self.resolve(path)?;
-        let mut entries: Vec<_> = std::fs::read_dir(dir)
-            .ok()?
-            .filter_map(|e| e.ok())
-            .collect();
+    fn dir_entry(&self, path: &str, index: u32) -> DirEntryResult {
+        let Some(dir) = self.resolve(path) else {
+            return DirEntryResult::InvalidPath;
+        };
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return DirEntryResult::InvalidPath;
+        };
+        // Sorted by name: the panel iterates by ascending index across
+        // frames, so the order must be stable or entries skip/duplicate.
+        let mut entries: Vec<_> = rd.filter_map(|e| e.ok()).collect();
         entries.sort_by_key(|e| e.file_name());
-        let entry = entries.get(index as usize)?;
-        let is_dir = entry.file_type().ok()?.is_dir();
-        Some((entry.file_name().to_string_lossy().into_owned(), is_dir))
+        let Some(entry) = entries.get(index as usize) else {
+            return DirEntryResult::End;
+        };
+        let p = entry.path();
+        // metadata() follows symlinks (a symlinked dir is a dir);
+        // symlink_metadata() marks it a link — _isDirLink is the panel's
+        // recursion loop protection. A dangling link reports neither dir
+        // nor file and the panel skips it.
+        let (is_dir, is_file) = std::fs::metadata(&p)
+            .map(|m| (m.is_dir(), m.is_file()))
+            .unwrap_or((false, false));
+        let is_link = std::fs::symlink_metadata(&p)
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false);
+        DirEntryResult::Entry(DirEntry {
+            name: entry.file_name().to_string_lossy().into_owned(),
+            is_dir,
+            is_dir_link: is_dir && is_link,
+            is_file,
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `_getDirectoryEntry` (5,320) backend. The panel iterates ascending
+    /// indices resumably across frames (FileFinderPOSIX), so ordering must
+    /// be stable; it distinguishes dir symlinks (`_isDirLink`) for loop
+    /// protection; and it treats -1/0 as invalid path / end of listing.
+    #[test]
+    fn test_dir_entry_listing_flags_and_status_codes() {
+        let root = std::env::temp_dir()
+            .join(format!("chumby-fixture-dirent-test-{}", std::process::id()));
+        let usb = root.join("mnt/usb");
+        std::fs::create_dir_all(usb.join("Album")).unwrap();
+        std::fs::write(usb.join("Album/track.mp3"), b"x").unwrap();
+        std::fs::write(usb.join("a.mp3"), b"x").unwrap();
+        std::fs::write(usb.join("b.ogg"), b"x").unwrap();
+        std::os::unix::fs::symlink(usb.join("Album"), usb.join("loop")).unwrap();
+
+        let fs = RootFs { root: root.clone() };
+
+        // Sorted by name (byte order): Album, a.mp3, b.ogg, loop —
+        // and the messy panel path form resolves.
+        let names: Vec<String> = (0..)
+            .map_while(|i| match fs.dir_entry("//mnt/usb/", i) {
+                DirEntryResult::Entry(e) => Some(e.name),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(names, ["Album", "a.mp3", "b.ogg", "loop"]);
+
+        let DirEntryResult::Entry(album) = fs.dir_entry("/mnt/usb", 0) else {
+            panic!("expected entry")
+        };
+        assert!(album.is_dir && !album.is_dir_link && !album.is_file);
+        let DirEntryResult::Entry(file) = fs.dir_entry("/mnt/usb", 1) else {
+            panic!("expected entry")
+        };
+        assert!(file.is_file && !file.is_dir);
+        let DirEntryResult::Entry(link) = fs.dir_entry("/mnt/usb", 3) else {
+            panic!("expected entry")
+        };
+        assert!(link.is_dir && link.is_dir_link, "symlinked dir must set both flags");
+
+        // Subdirectory listing works; end / bad path report the panel codes.
+        assert!(matches!(fs.dir_entry("/mnt/usb/Album", 0), DirEntryResult::Entry(_)));
+        assert_eq!(fs.dir_entry("/mnt/usb", 4), DirEntryResult::End);
+        assert_eq!(fs.dir_entry("/mnt/nosuch", 0), DirEntryResult::InvalidPath);
+        assert_eq!(fs.dir_entry("/mnt/usb/a.mp3", 0), DirEntryResult::InvalidPath);
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// /tmp/musicsource must die with the process, as it did on real
+    /// hardware (tmpfs): a persisted copy makes the Music panel offer a
+    /// resume PLAY that is inert for mp3files — resumeFrom() replays an
+    /// in-memory track list a fresh process doesn't have (2026-07-11).
+    #[test]
+    fn test_stale_musicsource_removed_at_start() {
+        let root = std::env::temp_dir()
+            .join(format!("chumby-fixture-musicsource-test-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("rootfs/tmp")).unwrap();
+        let f = root.join("rootfs/tmp/musicsource");
+        std::fs::write(&f, r#"<musicSource state="&lt;mp3files/&gt;" label="x" selector="mp3files" />"#).unwrap();
+
+        let _host = FixtureHost::new(&root);
+        assert!(!f.exists(), "stale /tmp/musicsource must be removed at start");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
 
     /// _setTimeZone (5,178) -> _getTimeZone (5,177) must round-trip through
     /// /psp/timezone in the virtual rootfs, as it does on real hardware
