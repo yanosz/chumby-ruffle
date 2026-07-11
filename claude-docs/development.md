@@ -237,6 +237,25 @@ line. Audio-device failure on a headless machine is expected and non-fatal.
 that renders disabled but still fires, or a widget that loads but never
 paints.
 
+**USB music** (desktop, verified 2026-07-11): Music → My Music Files opens
+the `/mnt/usb` browser over the fixture tones (`fixtures/README.md`).
+Exercised end-to-end: browse, descend into `album/`, back, breadcrumb
+normalization, per-track play, Play All (recursive `FileFinderPOSIX` scan
+found all 4 including the subfolder), next/prev, shuffle (Random order
+visible in the track sequence), stop, now-playing row highlight, the
+source-list "Last:" resume banner, and the "No files available" message on
+an emptied `/mnt/usb` (no hang; the browser re-lists on every screen
+entry, so hotplug needs no restart). Alarm-from-USB both ways: an
+`arg="mp3files"` alarm with a valid `param` path rang from that file at
+the set minute, and one with a vanished path logged "path not found,
+searching for files", re-scanned `/mnt/usb` and rang from what it found.
+To arm one without clicking through the wizard, write `/psp/alarms` with
+`type="audio" arg="mp3files"
+param="&lt;mp3files path=&quot;/mnt/usb/…&quot; /&gt;"` and restart — the
+panel reads the file only at boot. One xdotool trap from this pass: a
+`pkill -f <pattern>` whose pattern appears in the invoking shell's own
+command line kills the wrapper first (`pkill -x ruffle_desktop` instead).
+
 To exercise the backup alarm (FR13) without waiting for a real alarm: start
 the player, let it boot (~15 s — the panel rewrites `/psp/ifalarm` at boot,
 so arming earlier gets overwritten), then

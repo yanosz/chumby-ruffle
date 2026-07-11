@@ -164,8 +164,8 @@ mod tests {
             self.0.lock().unwrap().remove(path);
             Ok(())
         }
-        fn dir_entry(&self, _path: &str, _index: u32) -> Option<(String, bool)> {
-            None
+        fn dir_entry(&self, _path: &str, _index: u32) -> crate::chumby::host::DirEntryResult {
+            crate::chumby::host::DirEntryResult::InvalidPath
         }
     }
 

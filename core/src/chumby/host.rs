@@ -23,6 +23,29 @@ pub enum HostError {
     Io(std::io::Error),
 }
 
+/// One directory entry as `_getDirectoryEntry` (5,320) reports it. The
+/// panel reads `_name`, `_path`, `_isDir`, `_isDirLink`, `_isFile` off the
+/// filled object and does its own filtering: dotfiles, directory symlinks
+/// (`is_dir_link` — its loop protection), `usb-*` dirs, music extensions.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DirEntry {
+    pub name: String,
+    pub is_dir: bool,
+    pub is_dir_link: bool,
+    pub is_file: bool,
+}
+
+/// The panel's `DIRECTORY_ENTRY_*` status codes (frame 2 `ChumbyNative`).
+#[derive(Debug, Clone, PartialEq)]
+pub enum DirEntryResult {
+    /// DIRECTORY_ENTRY_SUCCESS (1)
+    Entry(DirEntry),
+    /// DIRECTORY_ENTRY_INVALID_INDEX (0) — clean end of listing
+    End,
+    /// DIRECTORY_ENTRY_INVALID_PATH (-1)
+    InvalidPath,
+}
+
 /// Filesystem category: the virtual rootfs behind the filesystem natives
 /// `_getFile` (5,50), `_putFile` (5,51), `_fileExists` (5,53),
 /// `_fileSize` (5,54) and `_unlink` (5,55).
@@ -32,11 +55,11 @@ pub trait ChumbyFs: Send + Sync {
     fn file_exists(&self, path: &str) -> bool;
     fn file_size(&self, path: &str) -> Option<u64>;
     fn unlink(&self, path: &str) -> Result<(), HostError>;
-    /// Directory entry by index; `None` = invalid path or index out of range.
-    /// Returns (name, is_directory). Not called yet: `_getDirectoryEntry`
-    /// (5,320) currently stubs "end of listing" — this method is the ready
-    /// backend for wiring it up with the USB-music milestone.
-    fn dir_entry(&self, path: &str, index: u32) -> Option<(String, bool)>;
+    /// Directory entry by index, for `_getDirectoryEntry` (5,320). The
+    /// panel iterates ascending indices, resumable across frames
+    /// (`FileFinderPOSIX` re-posts 200 entries per frame), so the listing
+    /// order must be stable call-to-call.
+    fn dir_entry(&self, path: &str, index: u32) -> DirEntryResult;
 }
 
 /// The full host. All errors are normal results — the control panel handles

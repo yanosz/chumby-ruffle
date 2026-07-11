@@ -91,6 +91,28 @@ The fixture rootfs is **read-write** — all of the panel's persistence
 lands there. A desktop run therefore mutates `fixtures/rootfs/`; check
 `git status` before concluding a fixture changed by itself.
 
+### Directory enumeration: USB / local music
+
+`_getDirectoryEntry` (5,320) is the one native that mutates an AVM1 object
+argument, so its arm lives inline in `avm.rs` (`dispatch` has the
+`activation` and the raw object; objects cannot cross `HostValue`). The
+host side is `ChumbyFs::dir_entry` → `RootFs`: `read_dir`, name-sort,
+index. The sort is not cosmetic — the panel iterates ascending indices
+resumably across frames (`FileFinderPOSIX` re-posts `[dir, index]` at 200
+entries/frame), so an unstable order would skip or duplicate entries.
+`metadata()` (follows symlinks) decides `_isDir`/`_isFile`;
+`symlink_metadata()` sets `_isDirLink`, the panel's recursion loop guard.
+`_path` is rebuilt as a normalized panel-space join (`panel_path_join`) —
+the callers pass `//mnt/usb/`-style paths, and the value feeds the
+breadcrumb, `_fileExists`, and `_playAudio`, whose `resolve_url` maps it
+into the rootfs for mpv. So mounting media at `<rootfs>/mnt/usb` makes
+browsing *and* playback work with no further plumbing.
+
+Each call re-lists the directory — O(n²) per scan, accepted knowingly
+(proportionality): the browser lists ≤100 entries and Play All caps at
+2500 files spread across frames. Revisit with a one-entry cache only if
+the on-device Play All scan proves slow.
+
 ### The widget channel
 
 Real chumby fetched its channel — a list of widget instances — from

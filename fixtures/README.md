@@ -60,6 +60,13 @@ and on the Pi.
 - `rootfs/LICENSES/`: `gpl.txt`, `lgpl.txt`, `README` copied verbatim from the
   device backup — the SOFTWARE LICENSE viewer (Settings → Chumby Info →
   SOFTWARE LICENSE) loads `gpl.txt`/`lgpl.txt` via `file:////LICENSES/…`.
+- `rootfs/mnt/usb/`: what Music → My Music Files browses
+  (`_getDirectoryEntry`, 5,320) and plays. Four one-second sine tones at
+  distinct pitches (one in `album/`, so descending into a folder is
+  exercised), generated — nothing copyrighted, unlike the alarm tones:
+  `ffmpeg -f lavfi -i "sine=frequency=440:duration=1" -ar 22050 -b:a 32k tone-a4.mp3`.
+  On the Pi the appliance replaces this directory with a symlink to the
+  real USB automount (chumby-pi repo).
 
 Format gotchas (cost a debugging round each on 2026-07-06):
 - `psp/alarms`: the `time` attribute is **minutes** since midnight

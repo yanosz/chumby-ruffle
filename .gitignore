@@ -29,6 +29,9 @@ RECOVER_*.fla
 /fixtures/**/*.mp3
 /fixtures/**/*.wav
 /fixtures/widgets/*.jpg
+# …except the USB-music test tones: sine waves we generate ourselves
+# (fixtures/README.md), nothing chumby about them.
+!/fixtures/rootfs/mnt/usb/**/*.mp3
 /claude-docs/appendix/
 /claude-docs/images/
 

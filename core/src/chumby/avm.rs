@@ -116,7 +116,7 @@ fn dispatch<'gc>(
     activation: &mut Activation<'_, 'gc>,
     index: u16,
     name: &'static str,
-    _args: &[Value<'gc>],
+    args: &[Value<'gc>],
     host_args: &[HostValue],
 ) -> Result<Value<'gc>, Error<'gc>> {
     let Some(host) = host::host() else {
@@ -160,11 +160,43 @@ fn dispatch<'gc>(
             let _ = host.fs().unlink(&str_arg(0));
             HostValue::Undefined
         }
-        // (5,320) _getDirectoryEntry(obj, path, index): fills obj and returns
-        // a status code. Object-filling lands with the USB-music step; until
-        // then report DIRECTORY_ENTRY_INVALID_INDEX (0) = "no more entries",
-        // which every observed caller treats as a clean end of listing.
-        320 => HostValue::Number(0.0),
+        // (5,320) _getDirectoryEntry(obj, path, index): fills obj with
+        // _name/_path/_isDir/_isDirLink/_isFile; returns 1 = entry,
+        // 0 = end of listing, -1 = bad path. The panel iterates ascending
+        // indices and does its own filtering (dotfiles, dir symlinks,
+        // usb-* dirs, music extensions).
+        320 => {
+            let path = str_arg(1);
+            let entry_index = match host_args.get(2) {
+                Some(HostValue::Number(n)) if *n >= 0.0 => *n as u32,
+                _ => 0,
+            };
+            match host.fs().dir_entry(&path, entry_index) {
+                host::DirEntryResult::Entry(e) => {
+                    if let Some(Value::Object(obj)) = args.first() {
+                        // _path in normalized panel space (the callers pass
+                        // "//mnt/usb/"-style paths; the value feeds the
+                        // breadcrumb, _fileExists and _playAudio).
+                        let full = panel_path_join(&path, &e.name);
+                        let gc = activation.gc();
+                        let fields: [(&str, Value<'gc>); 5] = [
+                            ("_name", AvmString::new_utf8(gc, &e.name).into()),
+                            ("_path", AvmString::new_utf8(gc, &full).into()),
+                            ("_isDir", e.is_dir.into()),
+                            ("_isDirLink", e.is_dir_link.into()),
+                            ("_isFile", e.is_file.into()),
+                        ];
+                        for (key, value) in fields {
+                            let key = AvmString::new_utf8(activation.gc(), key);
+                            obj.set(key, value, activation)?;
+                        }
+                    }
+                    HostValue::Number(1.0)
+                }
+                host::DirEntryResult::End => HostValue::Number(0.0),
+                host::DirEntryResult::InvalidPath => HostValue::Number(-1.0),
+            }
+        }
 
         // (5,52) _backtick(cmd) -> stdout (synchronous shell)
         52 => match host.exec(&str_arg(0)) {
@@ -186,6 +218,19 @@ fn dispatch<'gc>(
     };
 
     Ok(from_host_value(activation, result))
+}
+
+/// `_path` for `_getDirectoryEntry`: join directory and entry name in
+/// normalized panel space, collapsing the panel's multi-slash path forms.
+fn panel_path_join(dir: &str, name: &str) -> String {
+    let mut full = String::new();
+    for c in dir.split('/').filter(|c| !c.is_empty() && *c != ".") {
+        full.push('/');
+        full.push_str(c);
+    }
+    full.push('/');
+    full.push_str(name);
+    full
 }
 
 fn to_host_value(value: &Value) -> HostValue {
@@ -437,5 +482,20 @@ fn wrapper_name(index: u16) -> &'static str {
         387 => "_setDisplayRectEventTranslate",
         420 => "_SetOnLocationCallback",
         _ => "_unknown",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::panel_path_join;
+
+    /// _path must come out clean even from the panel's messy path forms —
+    /// it feeds the breadcrumb, _fileExists and _playAudio.
+    #[test]
+    fn test_panel_path_join_normalizes() {
+        assert_eq!(panel_path_join("//mnt/usb/", "a.mp3"), "/mnt/usb/a.mp3");
+        assert_eq!(panel_path_join("/mnt/usb/Album", "t.mp3"), "/mnt/usb/Album/t.mp3");
+        assert_eq!(panel_path_join("////mnt", "usb"), "/mnt/usb");
+        assert_eq!(panel_path_join("/mnt/./usb", "x"), "/mnt/usb/x");
     }
 }

@@ -248,7 +248,7 @@ the fork leaves category 4 alone.
 | 5,53 | `_fileExists(path)` | → 1/0 | rootfs |
 | 5,54 | `_fileSize(path)` | → size in bytes, 0 if missing | rootfs |
 | 5,55 | `_unlink(path)` | delete file → `undefined` | rootfs |
-| 5,320 | `_getDirectoryEntry(obj, path, index)` | fill `obj` with directory entry `index` → status (1 = entry valid, 0 = no more entries, −1 = bad path) | constant `0` ("end of listing") — object-filling lands with the USB-music milestone; `RootFs::dir_entry` is the ready backend |
+| 5,320 | `_getDirectoryEntry(obj, path, index)` | fill `obj` with directory entry `index` → status (1 = entry valid, 0 = no more entries, −1 = bad path) | real: `RootFs::dir_entry`, name-sorted so ascending-index iteration is stable; fills `_name`, `_path` (normalized panel-space join), `_isDir`, `_isDirLink`, `_isFile` — drives Music → My Music Files and the mp3files alarm browser |
 
 ### Shell
 
