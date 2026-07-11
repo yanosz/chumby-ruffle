@@ -39,6 +39,12 @@ RECOVER_*.fla
 # committed profile + *.widget.xml sidecars are the source of truth).
 /fixtures/widgets/.channel.sig
 
+# Downloaded remote-channel widgets land here (WidgetCache: /tmp/widgetcache):
+# copyrighted SWFs (already covered above) plus their thumbnails and the
+# cache manifest — runtime state, never committed. Populated only on real
+# hardware under access_chumby_com; a dev box has no serial to reach it.
+/fixtures/rootfs/**/widgetcache/
+
 # Per-box dev identity, generated at first start (real_ident.rs).
 /fixtures/rootfs/psp/guid
 

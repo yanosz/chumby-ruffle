@@ -6,12 +6,25 @@
 # The backup-alarm Klaxon ignores it.
 volume_cap = 100
 
-# 0/1. A 1 shows the SHOUTcast / blue octy radio / Sleep Sounds music
-# sources and lets their two chumby.com music hosts pass through the
-# navigator. Everything else chumby.com stays answered in-process.
+# 0/1. A 1 opts this box into chumby.com. It shows the SHOUTcast / blue
+# octy radio / Sleep Sounds music sources (their hosts pass through the
+# navigator), AND — on a box with a stable identity (a hardware serial or
+# device_guid below) — enables device registration and the account's real
+# widget channel: the panel's register wizard, /xml/authorize, chumbies,
+# profiles and widget downloads all reach the live service. Off (default),
+# nothing reaches chumby.com and the panel uses its local generated channel.
 access_chumby_com = 0
 
 # 0/1. A 1 shows the Squeezebox Server music source. The player side
 # works; whether a modern Lyrion server still answers the panel's legacy
 # /stream.mp3 player protocol is unverified.
 enable_lyrion = 0
+
+# Explicit device GUID (8-4-4-4-12) for a box WITHOUT a hardware serial —
+# a dev box, or non-Pi hardware. A Raspberry Pi derives its GUID from the
+# SoC serial and needs nothing here. When set, this becomes the identity
+# the panel presents and, unlike the auto-generated random dev GUID, lets a
+# serial-less box register and use chumby.com (with access_chumby_com = 1).
+# Leave unset to keep such a box offline. Register the chosen UUID on
+# chumby.com the same way as any device.
+# device_guid = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"

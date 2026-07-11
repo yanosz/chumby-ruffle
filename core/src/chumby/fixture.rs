@@ -338,6 +338,27 @@ impl ChumbyHost for FixtureHost {
             tracing::info!(target: "chumby_host", "music host passthrough {url}");
             return None;
         }
+        // Remote channels (roadmap item 5): under the flag, from real
+        // hardware, the whole "using chumby.com" surface passes through —
+        // identity (/xml/authorize, /xml/registerchumby), the account
+        // channel (/xml/chumbies, /xml/profiles, /xml/setprofile) and the
+        // widget/thumbnail loads — i.e. everything on xml.chumby.com and
+        // widgets.chumby.com. Gated on a stable owner identity — a hardware
+        // serial or a configured device_guid (has_wire_identity) — so a plain
+        // dev/CI box on the random GUID can never present a registrable
+        // identity or pull an account channel (NFR6). Other chumby hosts stay
+        // fixture-answered — notably
+        // update.chumby.com, so the device never fetches firmware from
+        // chumby.com. Flag off (or no serial): the boot-generated local
+        // channel fixture answers, unchanged — the only way to configure a
+        // channel without chumby.com.
+        if self.config.access_chumby_com
+            && is_using_host(host)
+            && super::real_ident::has_wire_identity(&self.config)
+        {
+            tracing::info!(target: "chumby_host", "chumby.com passthrough {url}");
+            return None;
+        }
         // Strip query string and trailing slash: fixture files are keyed by
         // path only (the panel requests e.g. "/xml/chumbies/?id=...").
         let path = path.split('?').next().unwrap_or("").trim_end_matches('/');
@@ -389,8 +410,18 @@ fn is_chumby_host(host: &str) -> bool {
         || host == "localhost"
 }
 
-/// The music-proxy hosts eligible for passthrough. xml.chumby.com (identity,
-/// profiles, updates) is never among them — it stays fixture-answered.
+/// The chumby.com hosts that carry the "using chumby.com" surface: device
+/// identity + registration, the account channel, and widget/thumbnail
+/// loads. Under the flag, from real hardware, these pass through to the live
+/// service. `update.chumby.com` is deliberately absent — the device never
+/// pulls firmware from chumby.com.
+fn is_using_host(host: &str) -> bool {
+    let host = host.split(':').next().unwrap_or(host);
+    host == "xml.chumby.com" || host == "widgets.chumby.com"
+}
+
+/// The music-proxy hosts eligible for passthrough. These carry no device
+/// identity, so — unlike `is_using_host` — they need no serial gate.
 fn is_music_host(host: &str) -> bool {
     let host = host.split(':').next().unwrap_or(host);
     host == "shoutcast.chumby.com" || host == "bor.chumby.com"
@@ -684,5 +715,17 @@ mod tests {
         assert!(!ifalarm.exists(), "dismissal must delete /psp/ifalarm");
 
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn using_host_covers_identity_channel_and_widgets_only() {
+        // The whole using surface lives on these two hosts (port-tolerant).
+        assert!(is_using_host("xml.chumby.com"));
+        assert!(is_using_host("widgets.chumby.com"));
+        assert!(is_using_host("xml.chumby.com:80"));
+        // Firmware updates and everything else stay fixture-answered.
+        assert!(!is_using_host("update.chumby.com"));
+        assert!(!is_using_host("shoutcast.chumby.com"));
+        assert!(!is_using_host("chumby.com"));
     }
 }

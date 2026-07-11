@@ -273,10 +273,13 @@ the crypto processor the original hardware read (`guidgen.sh` =
 gets a random v4 GUID instead, generated at first start and persisted as
 `/psp/guid` in the virtual rootfs (gitignored) — per-box, stable across
 runs (decision 2026-07-10; a shared fixed GUID and, before that, an
-`/etc/machine-id` seed were both rejected). In-player generation is
-accepted *for the time being* (Jan, 2026-07-10): it may have to move once
-registration lands, so that a CI run can never present a registrable
-identity to chumby.com (NFR6). The fixture GUID remains the last resort
+`/etc/machine-id` seed were both rejected). In-player generation survived
+the registration milestone unchanged (2026-07-11): rather than move it, the
+identity passthrough is gated on `real_ident::serial().is_some()`, so the
+random dev GUID is structurally unable to reach the wire and a CI run can
+never present a registrable identity (NFR6). The Pi registers with its
+serial-derived GUID, which is stable across reboots by construction — so
+registration needs nothing persisted locally. The fixture GUID remains the last resort
 when entropy or the rootfs write fails — a fixed answer beats one that
 changes every boot. GUID = salted md5 of the serial as an uppercase
 8-4-4-4-12 string; `HW#` = `<model>-<serial>` where model is "RPI3B"-style
@@ -457,11 +460,20 @@ device runs 480×320.
 
 ### NFR6 — No traffic to chumby.com, ever
 
-Not on the boot path, not in CI, not in a desktop run. The device GUID must
-not leak. This is the unconditional default; the *owner* may relax exactly
-the music-proxy slice of it by setting `access_chumby_com=1` in player.toml
-(FR14/FR15, decision 2026-07-11) — identity-bearing traffic stays blocked
-even then, and the GUID never leaves the process in any configuration.
+Not on the boot path, not in CI, not in a desktop run. This is the
+unconditional default. The *owner* may relax it with `access_chumby_com=1`
+in player.toml, which opens two slices: the music proxies (FR14/FR15,
+2026-07-11), which carry no identity; and — since the registration
+milestone (2026-07-11) — the two registration endpoints `/xml/authorize`
+and `/xml/registerchumby`, which *do* carry the device GUID to chumby.com.
+That identity slice is doubly gated: the flag must be on **and** the machine
+must have a real hardware serial (`real_ident::serial().is_some()`), so a
+dev box or CI run — which has no serial and would present the random dev
+GUID — stays structurally offline for identity and can never register
+(verified locally: flag on + no serial → authorize fixture-answered, boots
+to main). Everything else on chumby.com hosts stays fixture-answered in
+every configuration; the GUID leaves the process only on the owner's
+explicit opt-in from real hardware.
 
 ### NFR7 — Performance headroom
 
@@ -489,3 +501,4 @@ Carried forward, in the order they are expected to land.
 | Intro widget | `playIntro` (F2:5289) loads `intro.swf` only through `_startSlave`, which we do not run. Since we own the interpreter, the fix is VM-level interception rather than reviving the slave system or editing the SWF. |
 | `clock_format` live update | The 12/24h toggle persists to `/psp/clock_format`, but a running widget only reads it at start. Real hardware pushes `_setSlaveVar("_chumby_clock_format", …)` every heartbeat; the in-movie path has no slave-var bridge. Recorded, no fix planned. |
 | Squeezebox / Lyrion | Out of scope (Jan, 2026-07-11); the source hides behind `enable_lyrion=0`. The player side is done — what is open is purely server-side: a scratchpad-extracted Lyrion 9.1.1 booted and answered JSON-RPC, but its `/stream.mp3` 404'd with "invalid skin", an artifact of the improvised install, so whether Lyrion 9.x still speaks the legacy HTTP-player stream was never settled. If ever revisited: a properly installed LMS, and note the dev box's port 9000 belongs to ThinLinc (the panel hardcodes that port). |
+| Social surface — **out of scope** (Jan, 2026-07-11) | The add-widget catalog browse (`/xml/categories`), rating (`/xml/ratewidgetinstance`), and send-to-a-friend / mail (`/xml/sendwidgetinstance`, `/xml/sendmail`) are deliberately not implemented. The `main-send`/`main-rate` bar controls stay permanently disabled (ui-policy, unconditional) and those endpoints are never passed through. This closes roadmap item 5; registration + remote channels (Phases 0–2) shipped and verified live 2026-07-11 — mechanism in [design.md](design.md) §12, device deploy in chumby-pi's development.md. Not a gap, recorded so the decision isn't re-litigated. |

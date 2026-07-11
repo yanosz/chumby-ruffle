@@ -120,9 +120,9 @@ impl ChumbyHost for RealNetHost {
             self.mac().map(|m| format!("{m}\n"))
         } else if command.starts_with("guidgen.sh") {
             // Device identity (real_ident.rs): the crypto processor's job.
-            // Off-device: a per-box random GUID, persisted as /psp/guid.
-            super::real_ident::guid()
-                .or_else(|| super::real_ident::dev_guid(self.inner.fs()))
+            // Priority: player.toml device_guid, else serial-derived, else a
+            // per-box random GUID persisted as /psp/guid.
+            super::real_ident::resolve_guid(self.config(), self.inner.fs())
                 .map(|g| format!("{g}\n"))
         } else if command.starts_with("chumby_version -n") {
             super::real_ident::hw_serial().map(|s| format!("{s}\n"))
