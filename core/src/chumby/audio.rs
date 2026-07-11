@@ -27,6 +27,8 @@ pub struct AudioPlayer {
     pub bin: Option<PathBuf>,
     /// Virtual-rootfs root for resolving absolute chumby paths.
     rootfs: PathBuf,
+    /// Volume cap from player.toml: panel volume 100 maps to this (config.rs).
+    cap: f64,
     /// Running mpv process.
     child: Option<Child>,
     /// IPC socket for live control.
@@ -45,7 +47,7 @@ const SOCKET_PATH: &str = "/tmp/chumby-mpv.sock";
 const SOCKET_WAIT: Duration = Duration::from_millis(1000);
 
 impl AudioPlayer {
-    pub fn new(rootfs: PathBuf) -> Self {
+    pub fn new(rootfs: PathBuf, cap: f64) -> Self {
         let bin = find_mpv();
         if let Some(ref p) = bin {
             tracing::info!(target: "chumby_audio", "audio backend: {}", p.display());
@@ -56,11 +58,19 @@ impl AudioPlayer {
         Self {
             bin,
             rootfs,
+            cap,
             child: None,
             socket: None,
             state: AudioState::Stopped,
             pending_loops: 1,
         }
+    }
+
+    /// Map a panel-space volume (0–100) to what mpv gets: scaled by the
+    /// cap, so the panel's 100% is "full up to cap". Panel space itself is
+    /// never capped — the UI and /psp/volume keep their honest 0–100.
+    fn effective_volume(&self, volume: f64) -> u32 {
+        (volume.clamp(0.0, 100.0) * self.cap / 100.0).round() as u32
     }
 
     /// Start playing `url` at `volume` (0–100).
@@ -80,7 +90,7 @@ impl AudioPlayer {
         };
 
         let path = self.resolve_url(url);
-        let vol = volume.clamp(0.0, 100.0) as u32;
+        let vol = self.effective_volume(volume);
         let loops = self.pending_loops;
         self.pending_loops = 1;
 
@@ -125,9 +135,10 @@ impl AudioPlayer {
         }
     }
 
-    /// Send a volume change to the running player (0–100). No-op if stopped.
+    /// Send a volume change to the running player (panel space 0–100).
+    /// No-op if stopped.
     pub fn set_volume(&mut self, volume: f64) {
-        let vol = volume.clamp(0.0, 100.0) as u32;
+        let vol = self.effective_volume(volume);
         self.send_ipc(&format!(r#"{{"command":["set_property","volume",{vol}]}}"#));
     }
 
@@ -271,6 +282,21 @@ fn wait_for_socket(path: &Path, timeout: Duration) -> Option<UnixStream> {
 mod tests {
     use super::*;
 
+    /// The volume cap (player.toml) scales panel space onto the backend:
+    /// panel 100% = cap, proportionally below. Panel values stay uncapped
+    /// everywhere the panel reads them back — only mpv sees the scale.
+    #[test]
+    fn test_volume_cap_scales_panel_space() {
+        let capped = AudioPlayer::new(PathBuf::from("/nonexistent"), 40.0);
+        assert_eq!(capped.effective_volume(100.0), 40);
+        assert_eq!(capped.effective_volume(50.0), 20);
+        assert_eq!(capped.effective_volume(0.0), 0);
+        assert_eq!(capped.effective_volume(150.0), 40); // panel space clamps first
+
+        let uncapped = AudioPlayer::new(PathBuf::from("/nonexistent"), 100.0);
+        assert_eq!(uncapped.effective_volume(60.0), 60);
+    }
+
     /// Integration test for the mpv audio backend.
     ///
     /// Requires mpv to be installed and the chumby alarm-tone fixtures to exist.
@@ -295,7 +321,7 @@ mod tests {
         };
 
         let tone = rootfs.join("usr/chumby/alarmtones/Beep.mp3");
-        let mut player = AudioPlayer::new(rootfs.clone());
+        let mut player = AudioPlayer::new(rootfs.clone(), 100.0);
 
         if player.bin.is_none() {
             eprintln!("SKIP: mpv not found");

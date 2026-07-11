@@ -41,3 +41,6 @@ RECOVER_*.fla
 
 # Per-box dev identity, generated at first start (real_ident.rs).
 /fixtures/rootfs/psp/guid
+
+# Per-box player config (config.rs); absent means defaults.
+/fixtures/player.toml

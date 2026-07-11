@@ -4,6 +4,7 @@
 //! HTTP, filesystem — see the README). Implementations answer from
 //! fixtures (`FixtureHost`) or, later, the real system.
 
+use super::config::PlayerConfig;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -80,6 +81,9 @@ pub trait ChumbyHost: Send + Sync {
 
     /// The virtual rootfs.
     fn fs(&self) -> &dyn ChumbyFs;
+
+    /// Owner-level knobs from `<fixtures>/player.toml` (config.rs).
+    fn config(&self) -> &PlayerConfig;
 }
 
 /// Process-global host registry.

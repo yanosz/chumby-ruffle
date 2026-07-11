@@ -12,6 +12,7 @@
 
 use super::audio::{AudioPlayer, AudioState};
 use super::backup_alarm::BackupAlarm;
+use super::config::{self, PlayerConfig};
 use super::host::{self, ChumbyFs, ChumbyHost, DirEntry, DirEntryResult, HostError, HostValue};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -32,6 +33,8 @@ pub struct FixtureHost {
     audio: Mutex<AudioPlayer>,
     /// Watches /psp/ifalarm and sounds the dead-man tone (chumbalarmd's job).
     backup_alarm: BackupAlarm,
+    /// Owner-level knobs from `<fixtures>/player.toml`, read once at start.
+    config: PlayerConfig,
 }
 
 impl FixtureHost {
@@ -63,16 +66,20 @@ impl FixtureHost {
             }
         }
 
+        let config = config::load(&root.join("player.toml"));
+
         Self {
             fs: RootFs { root: rootfs_path.clone() },
             exec_manifest,
             slave_vars: Mutex::new(HashMap::new()),
             native_state: Mutex::new(initial_state),
-            audio: Mutex::new(AudioPlayer::new(rootfs_path.clone())),
+            audio: Mutex::new(AudioPlayer::new(rootfs_path.clone(), config.volume_cap)),
             backup_alarm: BackupAlarm::start(rootfs_path),
+            config,
             root,
         }
     }
+
 
     /// Expand `{FIXTURES}` in a fixture body to the absolute fixtures
     /// directory. Fixture files must not hardcode install paths (the
@@ -322,6 +329,15 @@ impl ChumbyHost for FixtureHost {
         if !is_chumby_host(host) {
             return None;
         }
+        // The revived chumby.com's music proxies (SHOUTcast directory/tune-in,
+        // blue octy radio, Sleep Sounds) are opt-in live traffic: with
+        // access_chumby_com they pass through to the real navigator instead
+        // of being fixture-answered. Requests carry no device identity —
+        // `ssi` is an obfuscated timestamp (scope decision 2026-07-11).
+        if self.config.access_chumby_com && is_music_host(host) {
+            tracing::info!(target: "chumby_host", "music host passthrough {url}");
+            return None;
+        }
         // Strip query string and trailing slash: fixture files are keyed by
         // path only (the panel requests e.g. "/xml/chumbies/?id=...").
         let path = path.split('?').next().unwrap_or("").trim_end_matches('/');
@@ -338,6 +354,10 @@ impl ChumbyHost for FixtureHost {
 
     fn fs(&self) -> &dyn ChumbyFs {
         &self.fs
+    }
+
+    fn config(&self) -> &PlayerConfig {
+        &self.config
     }
 }
 
@@ -367,6 +387,13 @@ fn is_chumby_host(host: &str) -> bool {
         || host.ends_with(".chumby.com")
         || host == "127.0.0.1"
         || host == "localhost"
+}
+
+/// The music-proxy hosts eligible for passthrough. xml.chumby.com (identity,
+/// profiles, updates) is never among them — it stays fixture-answered.
+fn is_music_host(host: &str) -> bool {
+    let host = host.split(':').next().unwrap_or(host);
+    host == "shoutcast.chumby.com" || host == "bor.chumby.com"
 }
 
 /// "_setSystemVolume" -> "SystemVolume"
@@ -548,6 +575,58 @@ mod tests {
 
         let _host = FixtureHost::new(&root);
         assert!(!f.exists(), "stale /tmp/musicsource must be removed at start");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// Music-host passthrough: with access_chumby_com the two music proxies
+    /// fall through to the real navigator (None), while xml.chumby.com and
+    /// everything else chumby stays fixture-answered; without it nothing
+    /// escapes (a missing fixture is a clean error, never a real request).
+    #[test]
+    fn test_music_host_passthrough_gated_by_config() {
+        let root = std::env::temp_dir()
+            .join(format!("chumby-fixture-passthrough-test-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let host = FixtureHost::new(&root);
+        assert!(matches!(
+            host.fetch("http://shoutcast.chumby.com/shoutcast/list"),
+            Some(Err(HostError::NotFound(_)))
+        ));
+
+        std::fs::write(root.join("player.toml"), "access_chumby_com = 1\n").unwrap();
+        let host = FixtureHost::new(&root);
+        assert!(host.fetch("http://shoutcast.chumby.com/shoutcast/list").is_none());
+        assert!(host.fetch("http://bor.chumby.com/chumcast/list").is_none());
+        assert!(matches!(
+            host.fetch("http://xml.chumby.com/xml/chumbies"),
+            Some(Err(HostError::NotFound(_)))
+        ));
+        assert!(matches!(
+            host.fetch("http://podcast.chumby.com/podcast/cbs/list"),
+            Some(Err(HostError::NotFound(_)))
+        ));
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// `<fixtures>/player.toml` is read once at construction; without it,
+    /// defaults apply. It sits outside rootfs/ so the panel's _putFile
+    /// cannot reach it.
+    #[test]
+    fn test_player_config_read_at_start() {
+        let root = std::env::temp_dir()
+            .join(format!("chumby-fixture-config-test-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let host = FixtureHost::new(&root);
+        assert_eq!(host.config().volume_cap, 100.0);
+        assert!(!host.config().access_chumby_com);
+
+        std::fs::write(root.join("player.toml"), "volume_cap = 40\n").unwrap();
+        let host = FixtureHost::new(&root);
+        assert_eq!(host.config().volume_cap, 40.0);
 
         std::fs::remove_dir_all(&root).ok();
     }

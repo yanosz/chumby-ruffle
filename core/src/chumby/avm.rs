@@ -75,6 +75,9 @@ pub fn method<'gc>(
     // UI policy rides the native-call cadence (the panel polls _bent every
     // frame), re-applying idempotently so screen re-entry can't undo it.
     super::ui_policy::apply(activation);
+    // One-shot (with retry until frame 2 defines the array): hide the
+    // music sources the appliance cannot serve.
+    super::music_sources::apply(activation);
 
     let result = dispatch(activation, index, name, args, &host_args)?;
 

@@ -149,6 +149,10 @@ impl ChumbyHost for RealNetHost {
     fn fs(&self) -> &dyn ChumbyFs {
         self.inner.fs()
     }
+
+    fn config(&self) -> &super::config::PlayerConfig {
+        self.inner.config()
+    }
 }
 
 fn read_primary_interface() -> Option<NetInfo> {
