@@ -78,6 +78,8 @@ pub fn method<'gc>(
     // One-shot (with retry until frame 2 defines the array): hide the
     // music sources the appliance cannot serve.
     super::music_sources::apply(activation);
+    // One-shot: replace playIntro so the INTRO button works under localCache.
+    super::intro::apply(activation);
 
     let result = dispatch(activation, index, name, args, &host_args)?;
 

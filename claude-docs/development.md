@@ -273,6 +273,25 @@ station → PLAY → tune-in redirect → mpv on the real stream URL);
 `enable_lyrion = 1` brings back Squeezebox Server. Navigation: bend →
 Music icon (570,335); rows start at (150,160), PLAY at (57,458).
 
+**Intro** (desktop, verified 2026-07-11): needs `intro.swf` from the backup
+at `fixtures/rootfs/usr/widgets/intro.swf` (gitignored), and on a box with
+no sound card the ALSA null-device workaround from §7 — without it the
+tour freezes on its first frame. Navigation: bend → SETTINGS (448,458) →
+CHUMBY INFO (121,164) → INTRO (342,462). Success: the Hamby/factory scene
+animates, chapters change (~7–25 s each), and tapping `exit` (557,75)
+advances to the next channel widget (log: `playIntro: staging`, then
+`intro completed — advancing`). Two faithful oddities, not bugs: mid-tour
+the exit button is dead (the SWF re-places `exit_btn` without rewiring
+`onRelease`; only frames 1 and 15 wire it), and the tour's second half
+*renders a mock control panel* — screenshots of it look confusingly like
+the real UI. Exercised in this pass: INTRO click, chapter progression
+through the accelerometer ball page (ball centered = the 5,60 fixture is
+right), exit-at-frame-1 → channel resume, and the movie-start check with
+the surgery in (exit 124, `_getPlatform`, no panic). **Not exercised**:
+the standalone ending flow (control screen → enable/disable buttons →
+quit exiting the process) and a second INTRO replay in one session — see
+the Boot-time intro gap in requirements.md §3.
+
 To exercise the backup alarm (FR13) without waiting for a real alarm: start
 the player, let it boot (~15 s — the panel rewrites `/psp/ifalarm` at boot,
 so arming earlier gets overwritten), then
@@ -355,6 +374,19 @@ Each of these cost real time.
   the exit. Live stall signals, if ever needed: `paused-for-cache` /
   `core-idle` over the IPC socket. This is the failure mode the backup
   alarm (FR13) exists for.
+- **No audio device freezes stream-synced SWFs.** With no usable sound
+  card (this dev box: ALSA "cannot find card '0'", so cpal falls back to
+  `NullAudioBackend`), any clip carrying a `SoundStreamHead` timeline
+  stalls: the null backend reports stream position 0 forever, and the
+  player's `audio_skew_time` sync throttles the timeline toward the audio
+  clock that never advances. `intro.swf` (narration on every chapter) is
+  the case that bit — it froze on its first frame and looked exactly like
+  a broken loadMovie (2026-07-11). The panel itself has no stream sounds
+  and is unaffected; on hardware with sound it does not happen. Dev-box
+  workaround: point ALSA at a real-clock null *device* —
+  `ALSA_CONFIG_PATH=<file>` with
+  `</usr/share/alsa/alsa.conf>` + `pcm.!default { type null }` +
+  `ctl.!default { type null }`.
 - **`AlarmSet.repair()` (F2:11811) force-resets alarm[0]** after every
   parse: `_backup=true`, `_backupDelay=5`, `_duration=default`,
   `_autoDismiss=false` — whatever `/psp/alarms` says. The first alarm

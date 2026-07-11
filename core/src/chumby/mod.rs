@@ -28,6 +28,7 @@ pub mod config;
 pub mod fixture;
 pub mod host;
 pub mod input;
+pub mod intro;
 pub mod music_sources;
 pub mod navigator;
 pub mod real_ident;

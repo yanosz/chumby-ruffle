@@ -189,7 +189,7 @@ heart.
 `_bent` every frame, so the UI policy (§5) re-applies at frame cadence for
 free, with no new upstream hook.
 
-### Two pieces of AVM1 surgery
+### Three pieces of AVM1 surgery
 
 `chumby/avm.rs` deletes `WidgetPlayer.prototype.onPress` once the panel
 defines it. That click-stats handler puts the widget container into AS2
@@ -197,6 +197,25 @@ button mode and swallows every widget click on the in-movie `localCache`
 path. It is harmless on real hardware, where widgets play in a separate
 slave player. This is the "revisit if a widget misbehaves" case that the
 localCache decision explicitly foresaw.
+
+`intro.rs` replaces `WidgetPlayer.prototype.playIntro` and
+`introAdvanceTimerHandler` with Rust-native functions once frame 2 defines
+them. The panel's own `playIntro` (F2:5283) never attempts the intro under
+localCache — that branch substitutes the built-in clock; only the
+`_startSlave` branch names `intro.swf` — so there is nothing to intercept
+at (5,84) and the method itself is replaced. The replacement restages the
+slave branch's semantics onto the panel's own widgetProxy path (an init
+object with `_chumby_movie_url`, `attachMovie`, the `g_playingIntro`
+globals); the handler poll reads `widgetProxy.proxy._chumby_widget_done`
+like every localCache path does. The handler must be replaced *on the
+prototype*, not merely installed as `onEnterFrame`: closing the info screen
+runs `setState` (F2:3642), which re-installs the handler from the
+prototype — the original would then poll `_getSlaveVar` and a stale
+`"true"` in the slave-var store ends the intro instantly. While
+`g_playingIntro` is true, the intro's `fscommand("quit")` (its frame 12;
+on real hardware it kills the slave player) is swallowed by a chumby hook
+in `avm1/fscommand.rs`; standalone runs and the panel's own quit paths
+keep upstream behavior.
 
 `music_sources.rs` splices unsupported sources out of
 `MusicPlayer.musicSources` (requirements FR15), one-shot with retry until
@@ -291,8 +310,9 @@ We take the second. It was proven to work under stock Ruffle before any
 patch existed, it collapses roughly forty natives into logging stubs, and it
 means one player process. The cost is that anything the panel does only over
 the slave-var channel does not reach a running widget — which is why the
-12/24h clock format needs a restart, and why the intro widget needs
-interpreter-level work rather than a fixture.
+12/24h clock format needs a restart, and why the intro widget needed
+interpreter-level work rather than a fixture (the `playIntro` replacement,
+§3).
 
 The dashboard preview picture is compatible with this: it is a *static*
 thumbnail, `loadMovie`'d from a `<thumbnail href>` in the profile, not a
@@ -351,6 +371,8 @@ New code lives in `core/src/chumby/`, file by file in
 |------|--------|
 | `core/src/lib.rs` | `pub mod chumby;` |
 | `core/src/avm1/globals/asnative.rs` | `5 => chumby::avm::method` match arm (+ the `ASnative(4,39)` collision note) |
+| `core/src/avm1.rs` | `pub use function::FunctionObject;` (native fns for the prototype surgery) |
+| `core/src/avm1/fscommand.rs` | `chumby::intro::swallow_fscommand_quit` guard before the provider dispatch |
 | `core/src/player.rs` | click-target diagnostic in `run_mouse_pick`, silent unless `chumby_pick=debug`; body split into `run_mouse_pick_inner` |
 | `core/Cargo.toml` | `toml` (ui-policy parsing) and target-gated `libc` (getifaddrs, SIOCGIWESSID) |
 | `desktop/src/player.rs` | `ChumbyNavigator` wrap before `.with_navigator(…)` |
