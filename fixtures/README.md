@@ -24,6 +24,13 @@ cargo run -p ruffle_desktop -- \
 breaks `gotoAndStop` to late frame labels — `claude-docs/requirements.md`
 FR7.)
 
+An optional `player.toml` at this directory's root (gitignored; absent =
+defaults; template: `player.toml.example`) holds the owner knobs:
+`volume_cap` (percent; the panel's 100 % maps to it), `access_chumby_com`
+(0/1; a 1 shows the SHOUTcast / blue-octy music sources and lets their two
+hosts through) and `enable_lyrion` (0/1; shows the Squeezebox source).
+Read once at player start — `claude-docs/requirements.md` FR14/FR15.
+
 Audio (`_playAudio` family) plays through **mpv** if installed; without it
 the state machine still answers correctly but stays silent. Set
 `CHUMBY_AUDIO_DEVICE` (an mpv device name, e.g.

@@ -58,9 +58,11 @@ Everything the fork adds is in `core/src/chumby/`:
 |------|------|
 | `mod.rs` | module wiring |
 | `host.rs` | the `ChumbyHost` trait + the process-global registry |
+| `config.rs` | owner knobs from `<fixtures>/player.toml`, read once at start (FR14) |
 | `fixture.rs` | `FixtureHost`: natives, exec manifest, HTTP fixtures, virtual rootfs |
 | `real_net.rs` | `RealNetHost`: live network state, wraps `FixtureHost` |
 | `avm.rs` | the `ASnative(5,N)` dispatch table |
+| `music_sources.rs` | VM-level hiding of unsupported music sources (FR15) |
 | `navigator.rs` | `exec://`, chumby HTTP, and `file://` interception |
 | `ui_policy.rs` | declarative disabling of panel controls |
 | `ui-policy.toml` | the rules themselves, compiled in with `include_str!` |
@@ -129,6 +131,12 @@ ruffle_desktop \
     -PlocalCache=1 \
     swf-assets/controlpanel.swf
 ```
+
+An optional `fixtures/player.toml` (gitignored; absent = defaults;
+template: `fixtures/player.toml.example`) carries the owner knobs —
+`volume_cap` (percent, panel 100 % maps to it), `access_chumby_com` and
+`enable_lyrion` (both 0/1, default 0) — read once at start (requirements
+FR14/FR15).
 
 `-Pbuiltin=1` additionally takes the offline boot path (no authorize round
 trip). Useful environment:
@@ -255,6 +263,15 @@ param="&lt;mp3files path=&quot;/mnt/usb/…&quot; /&gt;"` and restart — the
 panel reads the file only at boot. One xdotool trap from this pass: a
 `pkill -f <pattern>` whose pattern appears in the invoking shell's own
 command line kills the wrapper first (`pkill -x ruffle_desktop` instead).
+
+**Music sources** (desktop, verified 2026-07-11): with no player.toml the
+Music screen lists exactly My Streams / My Music Files (boot log:
+`music sources hidden: […]`). `access_chumby_com = 1` brings back
+SHOUTcast / blue octy radio / Sleep Sounds — directory fetches log
+`music host passthrough`, and SHOUTcast played audibly end-to-end (select
+station → PLAY → tune-in redirect → mpv on the real stream URL);
+`enable_lyrion = 1` brings back Squeezebox Server. Navigation: bend →
+Music icon (570,335); rows start at (150,160), PLAY at (57,458).
 
 To exercise the backup alarm (FR13) without waiting for a real alarm: start
 the player, let it boot (~15 s — the panel rewrites `/psp/ifalarm` at boot,

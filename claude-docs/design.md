@@ -73,11 +73,20 @@ own request strings* (NFR4). No translation layer.
   pairs that must round-trip (volume, balance, mute, touchclick, timezone)
   are backed by files in the virtual rootfs, in the same place the panel
   itself persists them, so panel and host cannot disagree.
-- `exec` — longest-prefix match against a manifest; a few commands
-  (`chumby_set_volume N`, `md5sum`) get small dynamic handlers instead of
-  static files. Unknown → logged loudly, empty response.
+- `exec` — longest-prefix match against a manifest; a few commands get
+  dynamic handlers instead of static files (the backup-alarm dismissal in
+  `FixtureHost::exec`, the identity commands — `guidgen.sh`,
+  `chumby_version -n`, `md5sum` — in `RealNetHost`). Unknown → logged
+  loudly, empty response. (`chumby_set_volume|pan|mute` have no handler at
+  all — on our path the panel drives volume through `_setSystemVolume`, and
+  an unmatched backtick's empty answer is within FR4's contract.)
 - `fetch` — host-allowlisted static files under `http/<host>/<path>`.
-  In-process interception, no local HTTP server.
+  In-process interception, no local HTTP server. One carve-out: with
+  `access_chumby_com=1` the two music-proxy hosts (`shoutcast.chumby.com`,
+  `bor.chumby.com`) return `None` instead — pass through to the real
+  navigator (requirements FR15). The SHOUTcast tune-in redirect to
+  `yp.shoutcast.com` is followed by the real backend; no shoutcast-specific
+  code exists on our side. `xml.chumby.com` is never passed through.
 - `fs` — rooted at `rootfs/`, writes confined to the root (`..` rejected).
   This confinement is what neutralizes the `externalmusic.xml`
   arbitrary-path hazard.
@@ -143,6 +152,22 @@ Earlier revisions used a UDP `local_addr` probe for the IP and a
 `/proc/net/route` hex parse for the netmask. Both were brittle;
 `getifaddrs` is the canonical source and handles the edge cases they didn't.
 
+### Player configuration
+
+`config.rs` reads `<fixtures>/player.toml` once in `FixtureHost::new`
+(requirements FR14) — no new CLI flag, `--chumby-fixtures` already locates
+it, and the fixtures root is outside the panel-writable rootfs. Parsing is
+a manual `toml::Table` walk like ui-policy's; unknown keys and bad values
+warn and keep defaults.
+
+The volume cap is applied inside `AudioPlayer` (`effective_volume`, used
+by both `play` and the IPC `set_volume`), so one choke point covers every
+caller: `_playAudio`, `_setSystemVolume`, unmute, alarm fade-ins. The
+backup alarm's exemption from the cap is structural, not a flag: its tone
+child never passes through `AudioPlayer` (§9). `access_chumby_com` is
+stored on the host (`FixtureHost::config()`) for the remote-channels
+milestone to gate on; nothing reads it yet.
+
 ## 3. Vendor calls: the AVM table
 
 Upstream's `core/src/avm1/globals/asnative.rs` dispatches `ASnative(a,b)` by
@@ -164,7 +189,7 @@ heart.
 `_bent` every frame, so the UI policy (§5) re-applies at frame cadence for
 free, with no new upstream hook.
 
-### One piece of AVM1 surgery
+### Two pieces of AVM1 surgery
 
 `chumby/avm.rs` deletes `WidgetPlayer.prototype.onPress` once the panel
 defines it. That click-stats handler puts the widget container into AS2
@@ -172,6 +197,16 @@ button mode and swallows every widget click on the in-movie `localCache`
 path. It is harmless on real hardware, where widgets play in a separate
 slave player. This is the "revisit if a widget misbehaves" case that the
 localCache decision explicitly foresaw.
+
+`music_sources.rs` splices unsupported sources out of
+`MusicPlayer.musicSources` (requirements FR15), one-shot with retry until
+frame 2 defines the array. The array was chosen over the per-player
+`exists()` prototypes because it is the single choke point — the Music
+list, the alarm audio list and `sourceForSelector` all read it — and
+because iPod's force-show bypasses `exists()` entirely. `reorderSources`
+and externalmusic.xml only permute or insert, never resurrect a removed
+entry, so one shot is enough. Which selectors are hidden depends on
+`access_chumby_com` and `enable_lyrion` (config.rs).
 
 ## 4. URL interception
 

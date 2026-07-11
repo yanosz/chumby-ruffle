@@ -348,6 +348,60 @@ Decisions (Jan, 2026-07-10, scoping A2 of the options ladder):
   sink/hardware volume writes until the on-device check says it is too
   quiet.
 
+### FR14 — Player configuration file
+
+Owner-level knobs live in `<fixtures>/player.toml`, read **once at player
+start**; there is no write support and no reload. The file sits at the
+fixtures root, deliberately outside `rootfs/`: everything under the virtual
+rootfs is reachable by the panel's own `_putFile`, and the panel must not be
+able to reconfigure the player. Missing file means defaults; a broken one
+logs and answers defaults (NFR3).
+
+| key | default | meaning |
+|-----|---------|---------|
+| `volume_cap` | 100 | Percent. **A scale, not a clamp** (Jan, 2026-07-11): the panel's 100 % maps to the cap, proportionally below. Panel space stays honest 0–100 everywhere the panel reads it back (`/psp/volume`, `_getSystemVolume`); only what reaches the audio backend is scaled. The backup-alarm Klaxon (FR13) deliberately ignores the cap — it keeps its own `/psp/backup_alarm_volume` knob at full range (Jan, 2026-07-11). |
+| `access_chumby_com` | 0 | Opt-in chumby.com traffic. Today it gates exactly the music proxies (FR15): the SHOUTcast / blue octy radio / Sleep Sounds sources appear and their hosts pass through. Off (the default), NFR6 holds unconditionally. The remote-channels milestone will widen it. |
+| `enable_lyrion` | 0 | Shows the Squeezebox Server source (FR15). The player side is complete; the server side is unverified and out of scope (Jan, 2026-07-11). |
+
+The committed template is `fixtures/player.toml.example`; the live file is
+gitignored.
+
+### FR15 — Music sources policy
+
+The panel ships fourteen music sources (`MusicPlayer.musicSources`,
+F2:12798); a source is listed iff its player's `exists()` probe passes —
+except iPod, which `availableSources` force-shows on every platform but
+`insignia3.5` regardless of its probe (F2:12809). Scope re-decided
+2026-07-11 against live endpoints:
+
+- **Working locally**: My Streams (`directurl`), My Music Files
+  (`mp3files`). **Self-hiding** through their own failing probes: FM Radio,
+  MP3tunes, Internode, and the internal `alarm`/`user` pseudo-sources.
+- **Hidden always** (spliced out of `musicSources` at VM level,
+  `music_sources.rs`): `ipod` (no daemon, and the probe bypass makes it
+  otherwise unhideable), `noaa` (Wunderground sunset the wxradio relay —
+  the VHF service lives, its internet directory doesn't) and `cbspodcasts`
+  — NOAA and CBS confirmed non-working on a real chumby (Jan, 2026-07-11).
+- **Hidden unless `access_chumby_com=1`**: `shoutcast`, `chumbcast`,
+  `sleepcast`. The revived chumby.com (Blue Octy) still operates their
+  proxies — verified live 2026-07-11, including in-panel SHOUTcast
+  directory browsing and audible station playback. With the flag on, the
+  two music hosts (`shoutcast.chumby.com`, `bor.chumby.com`) pass through
+  the navigator; `xml.chumby.com` and every other chumby host stay
+  fixture-answered. The requests carry `config=ironforge`, station ids and
+  `ssi` — an obfuscated *timestamp* (F2:2282), not a device identity; the
+  GUID never leaves the process.
+- **Hidden unless `enable_lyrion=1`**: Squeezebox Server (`slimserver`) —
+  LAN-only (`http://<ip>:9000/stream.mp3`, IP persisted in
+  `/psp/slimserver_ip`), no chumby.com involvement. The player side is
+  complete: playIP feeds the same `_playAudio` → mpv path the proven
+  sources use. Whether Lyrion 9.x still answers the legacy HTTP-player
+  stream is unconfirmed and out of scope (Jan, 2026-07-11); see §3.
+
+The alarm audio list iterates the same array, so a hidden source is gone
+from the alarm wizard too. `/psp/music_order` (the panel's own file) only
+reorders and cannot remove; externalmusic.xml sources are unaffected.
+
 ---
 
 ## 2. Non-functional requirements
@@ -404,7 +458,10 @@ device runs 480×320.
 ### NFR6 — No traffic to chumby.com, ever
 
 Not on the boot path, not in CI, not in a desktop run. The device GUID must
-not leak.
+not leak. This is the unconditional default; the *owner* may relax exactly
+the music-proxy slice of it by setting `access_chumby_com=1` in player.toml
+(FR14/FR15, decision 2026-07-11) — identity-bearing traffic stays blocked
+even then, and the GUID never leaves the process in any configuration.
 
 ### NFR7 — Performance headroom
 
@@ -431,3 +488,4 @@ Carried forward, in the order they are expected to land.
 | Brightness | The panel's `/proc/sys/sense1/brightness` writes and `_setLCDMute` (5,20) are not mapped to a real backlight. Blocked on display hardware that can dim. |
 | Intro widget | `playIntro` (F2:5289) loads `intro.swf` only through `_startSlave`, which we do not run. Since we own the interpreter, the fix is VM-level interception rather than reviving the slave system or editing the SWF. |
 | `clock_format` live update | The 12/24h toggle persists to `/psp/clock_format`, but a running widget only reads it at start. Real hardware pushes `_setSlaveVar("_chumby_clock_format", …)` every heartbeat; the in-movie path has no slave-var bridge. Recorded, no fix planned. |
+| Squeezebox / Lyrion | Out of scope (Jan, 2026-07-11); the source hides behind `enable_lyrion=0`. The player side is done — what is open is purely server-side: a scratchpad-extracted Lyrion 9.1.1 booted and answered JSON-RPC, but its `/stream.mp3` 404'd with "invalid skin", an artifact of the improvised install, so whether Lyrion 9.x still speaks the legacy HTTP-player stream was never settled. If ever revisited: a properly installed LMS, and note the dev box's port 9000 belongs to ThinLinc (the panel hardcodes that port). |

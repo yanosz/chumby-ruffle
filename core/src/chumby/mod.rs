@@ -8,21 +8,27 @@
 //! Submodules:
 //! - `host`: the `ChumbyHost` trait (native / exec / fetch / fs categories)
 //! - `fixture`: `FixtureHost`, answering from a fixtures directory
+//! - `config`: owner-level knobs from `<fixtures>/player.toml`, read once
+//!   at start (volume cap, the future chumby.com switch)
 //! - `avm`: the `ASnative(5, N)` function table (per-index docs: README)
 //! - `navigator`: `NavigatorBackend` decorator intercepting `exec://` and
 //!   chumby HTTP endpoints
 //! - `audio`: mpv-backed player behind the audio native family
 //! - `backup_alarm`: the dead-man beep chumbalarmd provided on real hardware
 //! - `input`: simulated-input control channel (stdin + FIFO line commands)
+//! - `music_sources`: VM-level removal of music sources the appliance
+//!   cannot serve from `MusicPlayer.musicSources`
 //! - `ui_policy`: declarative dim/disable of panel controls the host
 //!   platform does not support (rules compiled in from `ui-policy.toml`)
 
 pub mod audio;
 pub mod avm;
 pub mod backup_alarm;
+pub mod config;
 pub mod fixture;
 pub mod host;
 pub mod input;
+pub mod music_sources;
 pub mod navigator;
 pub mod real_ident;
 pub mod real_net;

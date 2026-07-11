@@ -1,0 +1,17 @@
+# Player configuration template — copy to player.toml next to this file.
+# Read once at player start; absent file or absent key = the default shown
+# here. Reference: claude-docs/requirements.md FR14/FR15.
+
+# Percent. A scale, not a clamp: the panel's 100% volume maps to this.
+# The backup-alarm Klaxon ignores it.
+volume_cap = 100
+
+# 0/1. A 1 shows the SHOUTcast / blue octy radio / Sleep Sounds music
+# sources and lets their two chumby.com music hosts pass through the
+# navigator. Everything else chumby.com stays answered in-process.
+access_chumby_com = 0
+
+# 0/1. A 1 shows the Squeezebox Server music source. The player side
+# works; whether a modern Lyrion server still answers the panel's legacy
+# /stream.mp3 player protocol is unverified.
+enable_lyrion = 0
