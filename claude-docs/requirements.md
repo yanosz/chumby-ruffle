@@ -148,7 +148,12 @@ faithful.
 - **`/tmp`** (volatile): `movieheartbeat`, `nightmode`, `.guidhash`,
   `channel_names`, `widget_names`, `currentProfileID`, `currentProfileName`,
   `controlpanelversion`, `change_profile` (polled — an external
-  profile-switch request), `widgetcache/`.
+  profile-switch request), `widgetcache/`. Real hardware's `/tmp` is a
+  ramdisk; our rootfs persists it, and the difference is observable:
+  a surviving `/tmp/musicsource` makes the Music panel offer a resume
+  PLAY that is inert for mp3files (`resumeFrom()` replays an in-memory
+  track list a fresh process doesn't have — found 2026-07-11). The host
+  deletes `musicsource` at start; full `/tmp` volatility is a §3 gap.
 - **Device files**: `/proc/sys/sense1/brightness` (write, 0–65535),
   `/var/run/btplay.pid`, `/etc/{hardware,software}_version`,
   `/etc/firmware_build`, `/LICENSES/{gpl,lgpl}.txt`,
@@ -422,6 +427,7 @@ Carried forward, in the order they are expected to land.
 
 | Gap | Note |
 |-----|------|
+| `/tmp` volatility | Real hardware's `/tmp` is a ramdisk, wiped per boot; the virtual rootfs persists it. The one observable consequence (stale `/tmp/musicsource` → inert resume PLAY) is fixed pointwise — the host deletes that file at start. Clearing all of `/tmp` at start would be faithful, but collides with the boot machinery: `chumby-widget-channel` pre-writes `currentProfileID/Name` there before the player starts, and seven committed fixtures live there. A session of its own, if ever. |
 | Brightness | The panel's `/proc/sys/sense1/brightness` writes and `_setLCDMute` (5,20) are not mapped to a real backlight. Blocked on display hardware that can dim. |
 | Intro widget | `playIntro` (F2:5289) loads `intro.swf` only through `_startSlave`, which we do not run. Since we own the interpreter, the fix is VM-level interception rather than reviving the slave system or editing the SWF. |
 | `clock_format` live update | The 12/24h toggle persists to `/psp/clock_format`, but a running widget only reads it at start. Real hardware pushes `_setSlaveVar("_chumby_clock_format", …)` every heartbeat; the in-movie path has no slave-var bridge. Recorded, no fix planned. |
