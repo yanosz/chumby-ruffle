@@ -13,6 +13,7 @@
 //! leaves the process (every chumby.com endpoint is answered in-process;
 //! NFR6).
 
+use super::config::PlayerConfig;
 use super::host::ChumbyFs;
 use md5::{Digest, Md5};
 
@@ -74,6 +75,26 @@ fn read_cstr(path: &str) -> Option<String> {
 /// `guidgen.sh`: salted md5 of the serial as an uppercase 8-4-4-4-12 GUID.
 pub fn guid() -> Option<String> {
     serial().map(|s| format_guid(&md5_hex(format!("{GUID_SALT}:{s}").as_bytes())))
+}
+
+/// The GUID the panel presents, in priority order: an owner-configured
+/// `device_guid` (player.toml), else the hardware-serial-derived GUID, else
+/// the persisted random dev GUID. The configured value lets a serial-less
+/// box carry a stable, deliberate identity.
+pub fn resolve_guid(config: &PlayerConfig, fs: &dyn ChumbyFs) -> Option<String> {
+    config
+        .device_guid
+        .clone()
+        .or_else(guid)
+        .or_else(|| dev_guid(fs))
+}
+
+/// Whether the box has a stable, owner-anchored identity eligible to reach
+/// chumby.com's identity surface: a hardware serial, or a `device_guid` the
+/// owner set explicitly. The auto-generated random dev GUID does NOT qualify,
+/// so a plain dev box or CI run stays structurally offline for identity (NFR6).
+pub fn has_wire_identity(config: &PlayerConfig) -> bool {
+    config.device_guid.is_some() || serial().is_some()
 }
 
 const DEV_GUID_PATH: &str = "/psp/guid";

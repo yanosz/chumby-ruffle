@@ -97,22 +97,26 @@ selectors = ["controlPanel/depth:15/name:brightnessButton"]
 # named selector suffices (no depth fallback, same as the settings icons).
 
 # CHANNEL (D1-D7): switching/adding channels needs remote channel download
-# + registration, deferred to the project's last feature. This build ships
-# ONE boot-generated local channel = all installed widgets, so the channel
-# picker/info/add/reload is a dead-end. Disabling the button makes the
-# whole "channel" sub-panel (controlPanel frame "channel", DS1627)
+# + registration. With access_chumby_com on (and registered), the account's
+# channels are live, so the picker works — the rule lifts. Off, this build
+# ships ONE boot-generated local channel = all installed widgets, so the
+# channel picker/info/add/reload is a dead-end; disabling the button makes
+# the whole "channel" sub-panel (controlPanel frame "channel", DS1627)
 # unreachable.
 [[rule]]
 id        = "main-channel"
 action    = "disable"
+only_without_chumby_access = true
 selectors = ["controlPanel/name:mainButtons/name:channelButton"]
 
 # DELETE (B8): removing a widget only means something with server-side
-# channel management. The local channel is regenerated from the shipped
-# widgets at boot, so a delete cannot persist — dead-end. Disable it.
+# channel management, which access_chumby_com provides — so the rule lifts
+# when the flag is on. Off, the local channel is regenerated from the
+# shipped widgets at boot, so a delete cannot persist — dead-end; disable it.
 [[rule]]
 id        = "main-delete"
 action    = "disable"
+only_without_chumby_access = true
 selectors = ["controlPanel/name:mainButtons/name:deleteButton"]
 
 # SEND (B10) and RATE (B7): both are scope=skip (send is an excluded

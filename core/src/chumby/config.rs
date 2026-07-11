@@ -22,17 +22,29 @@ pub struct PlayerConfig {
     /// panel reads it back. The backup-alarm Klaxon (FR13) deliberately
     /// ignores the cap — it has its own `/psp/backup_alarm_volume` knob.
     pub volume_cap: f64,
-    /// Opt-in chumby.com traffic. Today it gates exactly the music
-    /// proxies: the SHOUTcast/blue-octy sources appear in the panel and
-    /// their hosts pass through the navigator (music_sources.rs,
-    /// fixture.rs). Off (the default), NFR6 holds: nothing reaches
-    /// chumby.com. The remote-channels milestone will widen this.
+    /// Opt-in chumby.com traffic. Gates (a) the music proxies — the
+    /// SHOUTcast/blue-octy sources appear in the panel and their hosts pass
+    /// through the navigator (music_sources.rs) — and (b) the whole
+    /// "using chumby.com" surface: identity/registration, the account
+    /// channel, and widget/thumbnail loads on xml/widgets.chumby.com
+    /// (fixture.rs `is_using_host`). The using surface additionally requires
+    /// a stable identity — a hardware serial or `device_guid`
+    /// (`real_ident::has_wire_identity`) — so a plain dev/CI box can never
+    /// register. Off (the default), NFR6 holds: nothing reaches chumby.com.
     pub access_chumby_com: bool,
     /// Shows the Squeezebox Server source. The panel side is complete
     /// (playIP → mpv, the proven stream path); whether a modern Lyrion
     /// server still answers the legacy `/stream.mp3` player protocol is
     /// unverified and out of scope (Jan, 2026-07-11) — hence off.
     pub enable_lyrion: bool,
+    /// An explicit device GUID for a box without a hardware serial (a dev
+    /// box, or non-Pi hardware). When set it becomes the identity the panel
+    /// presents, and — unlike the auto-generated random dev GUID — it counts
+    /// as a stable, owner-anchored identity, so such a box may register and
+    /// use chumby.com under `access_chumby_com` (real_ident::has_wire_identity).
+    /// NFR6 still holds: only this deliberately-configured value reaches the
+    /// wire; the random dev GUID never does. Stored uppercase 8-4-4-4-12.
+    pub device_guid: Option<String>,
 }
 
 impl Default for PlayerConfig {
@@ -41,6 +53,7 @@ impl Default for PlayerConfig {
             volume_cap: 100.0,
             access_chumby_com: false,
             enable_lyrion: false,
+            device_guid: None,
         }
     }
 }
@@ -56,8 +69,9 @@ pub fn load(path: &Path) -> PlayerConfig {
     };
     let config = parse(&text);
     tracing::info!(target: "chumby_host",
-        "player config {}: volume_cap={} access_chumby_com={}",
-        path.display(), config.volume_cap, config.access_chumby_com);
+        "player config {}: volume_cap={} access_chumby_com={} device_guid={}",
+        path.display(), config.volume_cap, config.access_chumby_com,
+        config.device_guid.as_deref().unwrap_or("<none>"));
     if config.access_chumby_com {
         tracing::warn!(target: "chumby_host",
             "access_chumby_com=1: music proxies pass through to chumby.com \
@@ -94,6 +108,11 @@ fn parse(text: &str) -> PlayerConfig {
                 None => tracing::warn!(target: "chumby_host",
                     "player config: enable_lyrion must be 0 or 1, got {value}"),
             },
+            ("device_guid", v) => match v.as_str().map(normalize_guid) {
+                Some(Some(g)) => config.device_guid = Some(g),
+                _ => tracing::warn!(target: "chumby_host",
+                    "player config: device_guid must be an 8-4-4-4-12 GUID, got {value} — ignored"),
+            },
             _ => tracing::warn!(target: "chumby_host",
                 "player config: unknown key {key:?} ignored"),
         }
@@ -116,6 +135,22 @@ fn as_flag(value: &toml::Value) -> Option<bool> {
         toml::Value::Boolean(b) => Some(*b),
         _ => None,
     }
+}
+
+/// Validate an 8-4-4-4-12 hex GUID and return it uppercased, or `None` if it
+/// isn't that shape — a malformed identity must never reach the wire.
+fn normalize_guid(s: &str) -> Option<String> {
+    let groups = [8, 4, 4, 4, 12];
+    let parts: Vec<&str> = s.trim().split('-').collect();
+    if parts.len() != groups.len() {
+        return None;
+    }
+    for (part, len) in parts.iter().zip(groups) {
+        if part.len() != len || !part.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return None;
+        }
+    }
+    Some(s.trim().to_uppercase())
 }
 
 #[cfg(test)]
@@ -152,5 +187,20 @@ mod tests {
         assert_eq!(parse("volume_cap = \"loud\""), PlayerConfig::default());
         assert_eq!(parse("access_chumby_com = 2"), PlayerConfig::default());
         assert_eq!(parse("some_future_key = 1"), PlayerConfig::default());
+    }
+
+    #[test]
+    fn test_device_guid_normalized_and_validated() {
+        // Accepted and uppercased (a made-up GUID, not any real device).
+        let config = parse("device_guid = \"12345678-9abc-def0-1234-56789abcdef0\"\n");
+        assert_eq!(
+            config.device_guid.as_deref(),
+            Some("12345678-9ABC-DEF0-1234-56789ABCDEF0")
+        );
+        // Malformed values are ignored (never reach the wire), leaving None.
+        assert!(parse("device_guid = \"not-a-guid\"").device_guid.is_none());
+        assert!(parse("device_guid = \"40EA9A8D\"").device_guid.is_none());
+        assert!(parse("device_guid = 12345").device_guid.is_none());
+        assert!(parse("").device_guid.is_none());
     }
 }

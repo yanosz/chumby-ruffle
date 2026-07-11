@@ -5,7 +5,9 @@
 //! backend:
 //! - `exec://<command>` — shell execution whose stdout becomes the document
 //!   (chumbyflashplayer extension; the part after `exec://` is a raw shell
-//!   command, NOT a URL — never parse it).
+//!   command, NOT a URL — never parse it as one). The one command we *do*
+//!   crack open is the widget-cache `curl '<url>' > <file>` download, which
+//!   we service in Rust instead of via a shell (see `fetch`).
 //! - `http(s)://` to chumby.com hosts / localhost daemons — answered by the
 //!   host's fixture corpus.
 //! Everything else passes through to the wrapped backend unchanged.
@@ -42,14 +44,23 @@ impl<T: NavigatorBackend> ChumbyNavigator<T> {
                 Err(e) => Err(format!("exec fixture error: {e:?}")),
             });
         }
-        // Panel-hardcoded chumby file:// paths (e.g. the licenses viewer's
-        // file:////LICENSES/gpl.txt) resolve against the virtual rootfs — the
-        // same filesystem view the fs natives use. Widget/thumbnail loads use
-        // {FIXTURES}-expanded real disk paths, which miss the rootfs and fall
-        // through to the real navigator.
-        if let Some(path) = url.strip_prefix("file://") {
+        // Local device paths resolve against the virtual rootfs — the same
+        // filesystem view the fs natives use. Two forms reach here: `file://`
+        // URLs (the licenses viewer's file:////LICENSES/gpl.txt) and the
+        // scheme-less absolute paths loadMovie uses for a cached widget
+        // (/tmp/widgetcache/<id>?_chumby_widget_instance_index=…). A rootfs
+        // miss falls through to the real navigator, so real-disk paths (the
+        // controlpanel SWF at file:///usr/share/…, {FIXTURES}-expanded
+        // fixture widgets) still load. loadMovie appends the widget
+        // parameters as a query string; key the lookup on the path alone
+        // (Ruffle still parses the query into the loaded movie's vars).
+        let local_path = url
+            .strip_prefix("file://")
+            .or_else(|| url.starts_with('/').then_some(url));
+        if let Some(path) = local_path {
+            let path = path.split('?').next().unwrap_or(path);
             if let Some(body) = host.fs().get_file(path) {
-                tracing::info!(target: "chumby_host", "file:// rootfs HIT {url}");
+                tracing::info!(target: "chumby_host", "rootfs HIT {url}");
                 return Some(Ok(body));
             }
             return None;
@@ -71,6 +82,38 @@ impl<T: NavigatorBackend> ChumbyNavigator<T> {
     }
 }
 
+/// Parse the panel's widget-cache download command out of an `exec://` URL:
+/// `exec://[nice -n N ]curl '<url>' > <dest>[; echo $?]`. Returns the SWF
+/// URL and the cache destination path, or `None` if this isn't that command
+/// (the `widgetcache` dest keeps it from matching other `exec://` traffic).
+fn parse_widget_curl(url: &str) -> Option<(String, String)> {
+    let cmd = url.strip_prefix("exec://")?;
+    let after_curl = &cmd[cmd.find("curl ")? + "curl ".len()..];
+    let q1 = after_curl.find('\'')? + 1;
+    let q2 = after_curl[q1..].find('\'')? + q1;
+    let fetch_url = after_curl[q1..q2].to_owned();
+    let dest = cmd[cmd.find('>')? + 1..]
+        .split(';')
+        .next()?
+        .trim()
+        .to_owned();
+    if dest.is_empty() || !dest.contains("widgetcache") {
+        return None;
+    }
+    Some((fetch_url, dest))
+}
+
+/// True for the chumby hosts that carry the using surface (mirrors
+/// `fixture::is_using_host`); the widget SWF download must target one.
+fn is_using_url_host(url: &str) -> bool {
+    let rest = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+        .unwrap_or(url);
+    let host = rest.split(['/', ':']).next().unwrap_or("");
+    host == "xml.chumby.com" || host == "widgets.chumby.com"
+}
+
 impl<T: NavigatorBackend> NavigatorBackend for ChumbyNavigator<T> {
     fn navigate_to_url(
         &self,
@@ -85,6 +128,57 @@ impl<T: NavigatorBackend> NavigatorBackend for ChumbyNavigator<T> {
     }
 
     fn fetch(&self, request: Request) -> OwnedFuture<Box<dyn SuccessResponse>, ErrorResponse> {
+        // Widget-cache download: to cache a remote widget the panel shells
+        // out `curl '<url>' > /…/widgetcache/<id>; echo $?` (WidgetCache,
+        // canCache is hardwired on for ironforge). We ship no shell, so
+        // fetch the SWF in Rust via the real backend and write it into the
+        // virtual rootfs — the panel then md5-verifies and loads the cached
+        // file over file://. Reimplement device touchpoints in Rust, not by
+        // shelling out (NFR2). Gated like the rest of the using surface:
+        // owner flag + real serial, and only for our using hosts (NFR6). The
+        // echoed body is "0\n"/"1\n", the `echo $?` the panel reads back.
+        if let Some((fetch_url, dest)) = parse_widget_curl(request.url()) {
+            let allowed = host::host()
+                .map(|h| {
+                    h.config().access_chumby_com
+                        && super::real_ident::has_wire_identity(h.config())
+                })
+                .unwrap_or(false)
+                && is_using_url_host(&fetch_url);
+            if allowed {
+                let echo_url = request.url().to_owned();
+                let sub = self.inner.fetch(Request::get(fetch_url.clone()));
+                return Box::pin(async move {
+                    let bytes = match sub.await {
+                        Ok(resp) => resp.body().await.ok(),
+                        Err(e) => {
+                            tracing::warn!(target: "chumby_host",
+                                "widget cache fetch {fetch_url} failed: {:?}", e.error);
+                            None
+                        }
+                    };
+                    let echo: &[u8] = match bytes {
+                        Some(b) => match host::host().map(|h| h.fs().put_file(&dest, &b)) {
+                            Some(Ok(())) => {
+                                tracing::info!(target: "chumby_host",
+                                    "widget cache download: {} bytes -> {dest}", b.len());
+                                b"0\n"
+                            }
+                            other => {
+                                tracing::warn!(target: "chumby_host",
+                                    "widget cache write {dest} failed: {other:?}");
+                                b"1\n"
+                            }
+                        },
+                        None => b"1\n",
+                    };
+                    Ok(Box::new(BytesResponse {
+                        url: echo_url,
+                        body: Some(echo.to_vec()),
+                    }) as Box<dyn SuccessResponse>)
+                });
+            }
+        }
         match self.intercept(request.url()) {
             Some(Ok(body)) => {
                 let response = BytesResponse {
@@ -178,5 +272,29 @@ impl SuccessResponse for BytesResponse {
 
     fn expected_length(&self) -> Result<Option<u64>, Error> {
         Ok(self.body.as_ref().map(|b| b.len() as u64))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_using_url_host, parse_widget_curl};
+
+    #[test]
+    fn parses_widget_cache_curl_command() {
+        let url = "exec://nice -n 10 curl 'http://xml.chumby.com/xml/movie_files?id=AB%40CD' \
+                   > /tmp/widgetcache/32d53436-c9b5-ba1a-639b-ead60a734f4a; echo $?";
+        let (fetch, dest) = parse_widget_curl(url).expect("should parse");
+        assert_eq!(fetch, "http://xml.chumby.com/xml/movie_files?id=AB%40CD");
+        assert_eq!(dest, "/tmp/widgetcache/32d53436-c9b5-ba1a-639b-ead60a734f4a");
+        assert!(is_using_url_host(&fetch));
+    }
+
+    #[test]
+    fn ignores_non_widget_execs() {
+        // Not a curl-to-widgetcache command.
+        assert!(parse_widget_curl("exec://mkdir /tmp/widgetcache; sync; echo $?").is_none());
+        assert!(parse_widget_curl("exec://curl 'http://x/y' > /tmp/other; echo $?").is_none());
+        assert!(parse_widget_curl("http://xml.chumby.com/xml/chumbies").is_none());
+        assert!(!is_using_url_host("http://update.chumby.com/update"));
     }
 }

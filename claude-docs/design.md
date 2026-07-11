@@ -215,7 +215,15 @@ and claims four kinds of URL:
 
 - **`exec://CMD`** → `host.exec()`, stdout returned as the loaded document.
 - **chumby HTTP hosts** → `host.fetch()`, answered from fixture files
-  in-process. Never leaves the machine.
+  in-process. Never leaves the machine — *except* the opt-in passthroughs
+  under `access_chumby_com` (`fixture.rs::fetch` returns `None`, so the
+  request falls through to the inner navigator and reaches the live
+  revived chumby.com): the music-proxy hosts (`is_music_host`), and the
+  two registration endpoints `/xml/authorize` + `/xml/registerchumby`
+  (`is_identity_endpoint`). The identity passthrough additionally requires
+  a real hardware serial (`real_ident::serial().is_some()`), so a dev/CI
+  box on the random GUID can never present a registrable identity (NFR6).
+  Everything else on those hosts stays fixture-answered.
 - **`file://`** → resolved against the virtual rootfs first. The licenses
   viewer hardcodes `file:////LICENSES/gpl.txt`, a chumby rootfs path we
   cannot change (FR1); the stock navigator would look for `/LICENSES` on the
@@ -420,3 +428,81 @@ the panel's own dispatcher reaches `main` given only two honest answers
 rather than a frame hack. If a later screen ever needs real frame control,
 the documented insertion point is `Player::update` with a queued-action
 approach.
+
+## 12. Remote channels, registration & identity
+
+Roadmap item 5. Off by default (NFR6); the owner opts in with
+`access_chumby_com`. Everything here is gated on **both** that flag and a
+stable identity — see below.
+
+**Identity model.** The panel presents a single GUID; there is no crypto
+signature on the wire (proven by reverse-engineering a real registered
+reference chumby: its `dcid` tool only reads a `<skin>` branding value from
+`/dev/dcid`, while device identity came from a separate crypto processor via
+`cpi`/`guidgen.sh` — which our hardware doesn't have). So we synthesise the
+GUID (`real_ident::resolve_guid`), in priority order:
+
+1. `device_guid` from player.toml (an explicit owner-set UUID),
+2. else a salted MD5 of the SoC serial (a Raspberry Pi — stable across
+   reflashes/SD swaps, recomputed identically each boot),
+3. else a random per-box GUID persisted at `/psp/guid` (dev/CI fallback).
+
+`real_ident::has_wire_identity(config)` is true only for (1) or (2) — a
+*stable, owner-anchored* identity. The random dev GUID (3) never qualifies,
+so a plain dev box or CI run stays structurally offline for identity even
+with the flag on (NFR6). This is the single gate the passthrough and the
+UI-policy lift share. **Never commit a real device serial or GUID** — the
+salt is public, so the serial reproduces the GUID, and the GUID (via
+`device_guid`) impersonates the device.
+
+**Passthrough (`fixture.rs::is_using_host`).** Under flag + identity, the
+whole "using" surface passes through to the live service: `xml.chumby.com`
+(authorize, registerchumby, chumbies, profiles, setprofile, movie_files,
+thumbnails) and `widgets.chumby.com`. `update.chumby.com` is deliberately
+**not** included — the device never pulls firmware from chumby.com. Flag off
+(or no identity): all of it stays fixture-answered, so the boot-generated
+local channel remains the way to configure a channel without chumby.com.
+
+**Registration wizard.** Built into the SWF (`register` frame,
+`DefineSprite_708`: `gotosite` → `dogrid` → `dopolling` → `dosuccess`); we
+build nothing, only answer `/xml/authorize` (boot gate + the wizard's 5 s
+activation poll) and `/xml/registerchumby?id=…&hash=<tapped-oval-pattern>`.
+An unregistered box boots into the wizard; the owner taps the oval pattern
+and claims the GUID on chumby.com, and the poll flips to `main`. A `Later`
+button escapes to `main` so it is never a lockout. Registration leaves
+nothing to persist — the stable GUID re-authorises every boot. Caveat: the
+`dosuccess` OK button runs the original's clean-slate reset, unlinking a set
+of `/psp` alarm/music prefs (`alarms`, `alarm_volume`, `pandora_*`,
+`shoutcast_search`, `url_streams`, `widget_shuffle`, `fmradiostation`,
+`mp3files_order`, `music_order`, `music_timer_duration`, `slimserver_ip`).
+
+**Widget download & cache.** `WidgetCache.canCache` is hardwired on for
+ironforge, so the panel always caches. It downloads each widget SWF by
+shelling out `exec://…curl '<movie_url>' > /tmp/widgetcache/<id>; echo $?` —
+and we ship no shell. `navigator.rs` recognises exactly that command
+(`parse_widget_curl`), fetches the SWF through the real backend, and writes
+the bytes into the virtual rootfs at the cache path (echoing `0`). The panel
+then md5/size-verifies the cached file and loads it. The cache is keyed
+`id`+`version` with a `widgetcache.xml` manifest, so later rotations hit the
+cache instead of chumby.com — gentle on the old server. Downloaded SWFs are
+copyrighted and gitignored (`/fixtures/rootfs/**/widgetcache/`); note that
+our rootfs `/tmp` persists across reboots (unlike real tmpfs), so the cache
+is more durable than on hardware.
+
+**Loading a cached widget.** `loadMovie` requests the cached SWF as a
+*scheme-less absolute path with a query string* —
+`/tmp/widgetcache/<id>?_chumby_widget_instance_index=…` — the widget
+parameters riding as the query. `navigator.rs::intercept` therefore treats
+both `file://` URLs and scheme-less `/…` paths as rootfs candidates, keyed
+on the path with the query stripped (Ruffle still parses the query into the
+loaded movie's vars); a rootfs miss falls through so real-disk paths (the
+controlpanel SWF, fixture widgets) still load.
+
+**UI policy.** `main-channel` and `main-delete` are dead-ends without the
+remote service, so their disable rules carry `only_without_chumby_access`
+and lift exactly when `has_wire_identity` + the flag hold (a serial-less box
+with no `device_guid` keeps them disabled — enabled-but-broken avoided).
+`main-send`/`main-rate` stay disabled **permanently**: the social surface
+(add-widget catalog, rating, send/mail) is out of scope (Jan, 2026-07-11),
+so those controls are dead-ends and their endpoints are never passed
+through. This is the last of item 5; there is no Phase 3.

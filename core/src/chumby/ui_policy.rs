@@ -65,6 +65,10 @@ struct Rule {
     id: String,
     action: Action,
     selectors: Vec<Vec<Segment>>,
+    /// When true, the rule applies only while chumby.com access is *off*.
+    /// These are dead-ends without the remote service (channel management,
+    /// delete) that come alive under `access_chumby_com`.
+    only_without_chumby_access: bool,
 }
 
 static POLICY: OnceLock<Vec<Rule>> = OnceLock::new();
@@ -135,7 +139,11 @@ fn parse(text: &str) -> Vec<Rule> {
                 "ui-policy rule '{id}': no selectors — rule skipped");
             continue;
         }
-        rules.push(Rule { id, action, selectors });
+        let only_without_chumby_access = entry
+            .get("only_without_chumby_access")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        rules.push(Rule { id, action, selectors, only_without_chumby_access });
     }
     rules
 }
@@ -198,7 +206,22 @@ pub fn apply<'gc>(activation: &mut Activation<'_, 'gc>) {
         return;
     };
 
+    // Rules tagged `only_without_chumby_access` are dead-ends the remote
+    // service resolves; skip them once remote channels are actually
+    // reachable. That is the same gate the passthrough uses (fixture.rs):
+    // the owner flag AND a stable identity (hardware serial or configured
+    // device_guid). A box with neither can't reach chumby.com even with the
+    // flag on, so the buttons stay the dead-ends they are and remain disabled.
+    let chumby_access = super::host::host()
+        .map(|h| {
+            h.config().access_chumby_com && super::real_ident::has_wire_identity(h.config())
+        })
+        .unwrap_or(false);
+
     for (index, rule) in rules.iter().enumerate() {
+        if rule.only_without_chumby_access && chumby_access {
+            continue;
+        }
         let mut target = None;
         let mut parent_only = false;
         for (nth, selector) in rule.selectors.iter().enumerate() {
@@ -331,5 +354,13 @@ selectors = []
         );
         assert!(rules.iter().any(|r| r.id == "clock-ntp-toggle"));
         assert!(rules.iter().all(|r| !r.selectors.is_empty()));
+        // The channel/delete dead-ends must stay gated on chumby.com access
+        // so they lift under the flag; everything else applies always.
+        let gated: Vec<&str> = rules
+            .iter()
+            .filter(|r| r.only_without_chumby_access)
+            .map(|r| r.id.as_str())
+            .collect();
+        assert_eq!(gated, ["main-channel", "main-delete"]);
     }
 }
