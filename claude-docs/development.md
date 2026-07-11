@@ -287,10 +287,19 @@ the exit button is dead (the SWF re-places `exit_btn` without rewiring
 the real UI. Exercised in this pass: INTRO click, chapter progression
 through the accelerometer ball page (ball centered = the 5,60 fixture is
 right), exit-at-frame-1 → channel resume, and the movie-start check with
-the surgery in (exit 124, `_getPlatform`, no panic). **Not exercised**:
-the standalone ending flow (control screen → enable/disable buttons →
-quit exiting the process) and a second INTRO replay in one session — see
-the Boot-time intro gap in requirements.md §3.
+the surgery in (exit 124, `_getPlatform`, no panic).
+
+The two remaining flows, verified 2026-07-12. **Standalone ending**
+(`intro.swf` run directly, `--chumby-fixtures` so the backticks reach the
+host): `exit` (557,75) → the three-button control screen. RESUME TOUR
+resumes from the bookmark (mid-tour, not frame 1); NEVER SHOW TOUR AGAIN
+ran the `disable_intro` backtick (flag file appeared in the fixture
+rootfs) and `fscommand("quit")` really exited the process, exit 0 — the
+in-panel swallow correctly stands down when `Object._chumby` is absent;
+SHOW TOUR AT NEXT STARTUP removed the flag and quit the same way.
+**Same-session replay**: INTRO → exit → clock widget → INTRO again played
+from the first scene (`playIntro: staging` ×2, `intro completed` ×2, no
+panic) — each play attaches a fresh widgetProxy, so no stale done-flag.
 
 To exercise the backup alarm (FR13) without waiting for a real alarm: start
 the player, let it boot (~15 s — the panel rewrites `/psp/ifalarm` at boot,
