@@ -64,6 +64,14 @@ and on the Pi.
   panel-writable, so edits made in the UI persist here across runs.
 - `rootfs/usr/chumby/alarmtones/`: the 7 stock alarm MP3s from the device
   backup (the SWF `_fileExists`-checks them before offering them).
+- `rootfs/usr/widgets/intro.swf`: the guided tour, from the device backup
+  (gitignored, like all chumby SWFs) — the Info screen's INTRO button
+  plays it via the `playIntro` replacement (`core/src/chumby/intro.rs`).
+  Absent, the load fails non-fatally and the widget area stays blank
+  until the user navigates on (the done-flag the poll waits for never
+  comes); CI never clicks INTRO, so the tracked tree needs no stub. On a
+  box with no sound card see the freeze trap in
+  `claude-docs/development.md` §7.
 - `rootfs/LICENSES/`: `gpl.txt`, `lgpl.txt`, `README` copied verbatim from the
   device backup — the SOFTWARE LICENSE viewer (Settings → Chumby Info →
   SOFTWARE LICENSE) loads `gpl.txt`/`lgpl.txt` via `file:////LICENSES/…`.

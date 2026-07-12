@@ -93,9 +93,18 @@ impl RealNetHost {
             None
         };
         Some(match wifi {
-            Some((quality, dbm, noise)) => format!(
-                "<wifi connected=\"1\" linkquality=\"{quality}\" signalstrength=\"{dbm}\" noiselevel=\"{noise}\"/>"
-            ),
+            Some((quality, dbm, noise)) => {
+                // −256 is the "no noise data" sentinel (brcmfmac on the Pi);
+                // the Info screen would print it as a nonsense dBm number.
+                let noise = if noise == -256 {
+                    "n/a".to_owned()
+                } else {
+                    noise.to_string()
+                };
+                format!(
+                    "<wifi connected=\"1\" linkquality=\"{quality}\" signalstrength=\"{dbm}\" noiselevel=\"{noise}\"/>"
+                )
+            }
             None => "<wifi connected=\"0\"/>".to_owned(),
         })
     }
@@ -200,8 +209,8 @@ fn read_dns() -> (String, String) {
 /// `/proc/net/wireless` stats for `iface`: (link quality %, signal dBm,
 /// noise dBm). Values carry a trailing '.' ("updated" flag). brcmfmac — the
 /// Pi's driver — reports quality on a 0–70 scale; the panel wants percent.
-/// Noise is passed through even when the driver reports the −256 "unknown"
-/// sentinel: the Info screen is a diagnostic, not a beauty contest.
+/// Noise passes through raw, −256 "unknown" sentinel included; the XML
+/// formatting in `signal_strength_xml` turns the sentinel into "n/a".
 fn parse_proc_wireless(text: &str, iface: &str) -> Option<(i32, i32, i32)> {
     for line in text.lines().skip(2) {
         let f: Vec<&str> = line.split_whitespace().collect();

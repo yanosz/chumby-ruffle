@@ -53,7 +53,8 @@ impl<T: NavigatorBackend> ChumbyNavigator<T> {
         // controlpanel SWF at file:///usr/share/…, {FIXTURES}-expanded
         // fixture widgets) still load. loadMovie appends the widget
         // parameters as a query string; key the lookup on the path alone
-        // (Ruffle still parses the query into the loaded movie's vars).
+        // (fetch() rewrites scheme-less response URLs to file:// so Ruffle
+        // can parse the query into the loaded movie's vars).
         let local_path = url
             .strip_prefix("file://")
             .or_else(|| url.starts_with('/').then_some(url));
@@ -181,8 +182,18 @@ impl<T: NavigatorBackend> NavigatorBackend for ChumbyNavigator<T> {
         }
         match self.intercept(request.url()) {
             Some(Ok(body)) => {
+                // A scheme-less answer must gain a parseable absolute URL:
+                // SwfMovie::append_parameters_from_url silently drops the
+                // query — the widget parameters, _chumby_clock_format among
+                // them — when Url::parse fails on the response URL.
+                let url = request.url();
+                let url = if url.starts_with('/') {
+                    format!("file://{url}")
+                } else {
+                    url.to_owned()
+                };
                 let response = BytesResponse {
-                    url: request.url().to_owned(),
+                    url,
                     body: Some(body),
                 };
                 Box::pin(async move { Ok(Box::new(response) as Box<dyn SuccessResponse>) })

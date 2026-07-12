@@ -189,7 +189,7 @@ heart.
 `_bent` every frame, so the UI policy (§5) re-applies at frame cadence for
 free, with no new upstream hook.
 
-### Two pieces of AVM1 surgery
+### Three pieces of AVM1 surgery
 
 `chumby/avm.rs` deletes `WidgetPlayer.prototype.onPress` once the panel
 defines it. That click-stats handler puts the widget container into AS2
@@ -197,6 +197,25 @@ button mode and swallows every widget click on the in-movie `localCache`
 path. It is harmless on real hardware, where widgets play in a separate
 slave player. This is the "revisit if a widget misbehaves" case that the
 localCache decision explicitly foresaw.
+
+`intro.rs` replaces `WidgetPlayer.prototype.playIntro` and
+`introAdvanceTimerHandler` with Rust-native functions once frame 2 defines
+them. The panel's own `playIntro` (F2:5283) never attempts the intro under
+localCache — that branch substitutes the built-in clock; only the
+`_startSlave` branch names `intro.swf` — so there is nothing to intercept
+at (5,84) and the method itself is replaced. The replacement restages the
+slave branch's semantics onto the panel's own widgetProxy path (an init
+object with `_chumby_movie_url`, `attachMovie`, the `g_playingIntro`
+globals); the handler poll reads `widgetProxy.proxy._chumby_widget_done`
+like every localCache path does. The handler must be replaced *on the
+prototype*, not merely installed as `onEnterFrame`: closing the info screen
+runs `setState` (F2:3642), which re-installs the handler from the
+prototype — the original would then poll `_getSlaveVar` and a stale
+`"true"` in the slave-var store ends the intro instantly. While
+`g_playingIntro` is true, the intro's `fscommand("quit")` (its frame 12;
+on real hardware it kills the slave player) is swallowed by a chumby hook
+in `avm1/fscommand.rs`; standalone runs and the panel's own quit paths
+keep upstream behavior.
 
 `music_sources.rs` splices unsupported sources out of
 `MusicPlayer.musicSources` (requirements FR15), one-shot with retry until
@@ -291,8 +310,9 @@ We take the second. It was proven to work under stock Ruffle before any
 patch existed, it collapses roughly forty natives into logging stubs, and it
 means one player process. The cost is that anything the panel does only over
 the slave-var channel does not reach a running widget — which is why the
-12/24h clock format needs a restart, and why the intro widget needs
-interpreter-level work rather than a fixture.
+12/24h clock format needs a restart, and why the intro widget needed
+interpreter-level work rather than a fixture (the `playIntro` replacement,
+§3).
 
 The dashboard preview picture is compatible with this: it is a *static*
 thumbnail, `loadMovie`'d from a `<thumbnail href>` in the profile, not a
@@ -351,6 +371,8 @@ New code lives in `core/src/chumby/`, file by file in
 |------|--------|
 | `core/src/lib.rs` | `pub mod chumby;` |
 | `core/src/avm1/globals/asnative.rs` | `5 => chumby::avm::method` match arm (+ the `ASnative(4,39)` collision note) |
+| `core/src/avm1.rs` | `pub use function::FunctionObject;` (native fns for the prototype surgery) |
+| `core/src/avm1/fscommand.rs` | `chumby::intro::swallow_fscommand_quit` guard before the provider dispatch |
 | `core/src/player.rs` | click-target diagnostic in `run_mouse_pick`, silent unless `chumby_pick=debug`; body split into `run_mouse_pick_inner` |
 | `core/Cargo.toml` | `toml` (ui-policy parsing) and target-gated `libc` (getifaddrs, SIOCGIWESSID) |
 | `desktop/src/player.rs` | `ChumbyNavigator` wrap before `.with_navigator(…)` |
@@ -439,8 +461,32 @@ stable identity — see below.
 signature on the wire (proven by reverse-engineering a real registered
 reference chumby: its `dcid` tool only reads a `<skin>` branding value from
 `/dev/dcid`, while device identity came from a separate crypto processor via
-`cpi`/`guidgen.sh` — which our hardware doesn't have). So we synthesise the
-GUID (`real_ident::resolve_guid`), in priority order:
+`cpi`/`guidgen.sh` — which our hardware doesn't have). Two external sources
+confirm this split, both found 2026-07-12:
+
+- **DCID is branding, not identity.** A chumby-forum thread
+  ([post 3193](https://forum.chumby.com/viewtopic.php?id=3193)) describes
+  the DCID as a "daughtercard id" — a tag-based binary structure (≤768 bytes)
+  in a small flash on a daughterboard, read/written by the `dcid` tool. A
+  stock US unit is just `<chum><skin>0000</skin></chum>`; regional variants
+  add distributor/language nodes. It selects skin and localized content —
+  no key, no signature. Matches what we saw on the reference box.
+- **The GUID is the crypto chip's, and unreproducible off-device.** Chumby
+  released the crypto-processor tool
+  ([github.com/sutajiokousagi/cpi](https://github.com/sutajiokousagi/cpi),
+  © Chumby Industries 2007-8). `cpi` talks to a *serial-attached* RSA chip
+  (`/dev/ttyS2` on ironforge, our platform — a prebuilt `arm-linux-ironforge`
+  binary is even checked in); `cpi -p` calls `cpi_get_putative_id` and prints
+  a key's "putative ID", which is exactly the string `guidgen.sh` (`cpi.sh -p`)
+  feeds the panel as the GUID. The RSA private key never leaves the chip
+  (the production tests need `Crypt-OpenSSL-RSA` + `Digest-SHA1`), so the
+  original GUID cannot be regenerated without the hardware — which is why we
+  *synthesise* a stand-in rather than emulate the chip. If a future need ever
+  demanded genuine crypto-processor semantics, this released source is the
+  starting point; for registration against the revived chumby.com it is not
+  needed (the account claims whatever GUID the box presents).
+
+So we synthesise the GUID (`real_ident::resolve_guid`), in priority order:
 
 1. `device_guid` from player.toml (an explicit owner-set UUID),
 2. else a salted MD5 of the SoC serial (a Raspberry Pi — stable across
@@ -494,9 +540,14 @@ is more durable than on hardware.
 `/tmp/widgetcache/<id>?_chumby_widget_instance_index=…` — the widget
 parameters riding as the query. `navigator.rs::intercept` therefore treats
 both `file://` URLs and scheme-less `/…` paths as rootfs candidates, keyed
-on the path with the query stripped (Ruffle still parses the query into the
-loaded movie's vars); a rootfs miss falls through so real-disk paths (the
-controlpanel SWF, fixture widgets) still load.
+on the path with the query stripped; a rootfs miss falls through so
+real-disk paths (the controlpanel SWF, fixture widgets) still load. The
+response URL for a scheme-less hit is rewritten to `file://…`, because
+`SwfMovie::append_parameters_from_url` extracts the query into the loaded
+movie's `_root` vars only when `Url::parse` succeeds on the response URL —
+a raw `/tmp/…` fails silently and every widget parameter is dropped,
+`_chumby_clock_format` the visible casualty (found on-device 2026-07-12;
+desktop fixture widgets load over `file://` hrefs and never hit it).
 
 **UI policy.** `main-channel` and `main-delete` are dead-ends without the
 remote service, so their disable rules carry `only_without_chumby_access`

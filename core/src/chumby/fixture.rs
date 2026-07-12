@@ -145,6 +145,12 @@ impl ChumbyHost for FixtureHost {
             // (5,25): the bend sensor, polled every frame; answered from the
             // simulated bend state (control channel / Home key / long-press).
             "_bent" => HostValue::Number(host::bent() as u8 as f64),
+            // (5,60): arg 0 is the driver version probe; other args are raw
+            // axis reads, 2048 = level (the intro's ball page polls 5 and 6).
+            "_accelerometer" => match args.first() {
+                Some(HostValue::Number(n)) if *n == 0.0 => HostValue::Number(1.0),
+                _ => HostValue::Number(2048.0),
+            },
             // (5,177): reads the rootfs file the panel also uses directly.
             "_getTimeZone" => HostValue::String(
                 self.fs
@@ -308,6 +314,17 @@ impl ChumbyHost for FixtureHost {
             return Ok(Vec::new());
         }
         if command == "reload_backup_alarm" {
+            return Ok(Vec::new());
+        }
+        // Intro flag protocol (intro.swf frames 12/15): the two scripts
+        // toggle /psp/disable_intro, which gates the boot-time intro run.
+        // Real semantics, like the backup-alarm pair above.
+        if command.ends_with("/scripts/enable_intro") {
+            let _ = std::fs::remove_file(self.fs.root.join("psp/disable_intro"));
+            return Ok(Vec::new());
+        }
+        if command.ends_with("/scripts/disable_intro") {
+            let _ = std::fs::write(self.fs.root.join("psp/disable_intro"), b"");
             return Ok(Vec::new());
         }
         for (prefix, file) in &self.exec_manifest {

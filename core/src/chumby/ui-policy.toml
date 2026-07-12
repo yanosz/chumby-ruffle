@@ -57,26 +57,18 @@ action    = "disable"
 selectors = ["controlPanel/depth:15/name:networkButton"]
 
 # CHUMBY INFO (E6): deliberately NOT disabled — it is the gateway to the Info
-# screen (E6) and the Licenses viewer (E7), both of which we ship. Its own
-# geek and intro buttons ARE disabled: geek is unwanted, and intro only
-# reaches intro.swf through the slave player, which the localCache widget
-# path does not run. The InfoPanel (DS1665) is placed as "info" on the
-# settings grid's "info" frame, and both buttons are named children — no
-# depth fallback, and depth:1 would collide with the clock panel's slot on
-# another frame of the same grid.
+# screen (E6) and the Licenses viewer (E7), both of which we ship. Its geek
+# button IS disabled (unwanted); the intro button is live again since the
+# playIntro replacement (intro.rs). The InfoPanel (DS1665) is placed as
+# "info" on the settings grid's "info" frame, and the button is a named
+# child — no depth fallback, and depth:1 would collide with the clock
+# panel's slot on another frame of the same grid.
 
 # The "π" geek-mode trigger (invisible hit area, onRelease directly on it).
 [[rule]]
 id        = "info-geek"
 action    = "disable"
 selectors = ["controlPanel/depth:15/name:info/name:piButton"]
-
-# PLAY INTRO: dead-end on the localCache path. The intro milestone (plan)
-# must drop this rule when playIntro works.
-[[rule]]
-id        = "info-intro"
-action    = "disable"
-selectors = ["controlPanel/depth:15/name:info/name:introButton"]
 
 # TOUCHSCREEN (E4): calibration is meaningless on the Pi's display path.
 [[rule]]

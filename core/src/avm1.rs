@@ -32,6 +32,7 @@ pub use debug::VariableDumper;
 pub use error::Error;
 pub use flv::FlvValueAvm1Ext;
 pub use function::ExecutionReason;
+pub use function::FunctionObject; // chumby: native fns for prototype surgery (chumby/intro.rs)
 pub use globals::array::ArrayBuilder;
 pub use globals::context_menu::make_context_menu_state;
 pub use globals::sound::start as start_sound;

@@ -216,7 +216,7 @@ returns `undefined`, like stock Ruffle.
 | 5,39 | `_batteryVolts()` | battery voltage | stub |
 | 5,40 | `_powerDown(when[, secondsToPowerUp])` | 1 = power off on player exit, 2 = now; optional wake-up delay | stub (a real `PiHost` could map this to systemd poweroff) |
 | 5,41 | `_powerSource()` | 0 = battery, 1 = external | `1` |
-| 5,60 | `_accelerometer(index)` | accelerometer reading, component by index | stub |
+| 5,60 | `_accelerometer(index)` | accelerometer reading, component by index | index 0 (version probe) → 1; other indexes → 2048, the level raw-axis value (intro.swf's ball page polls 5/6) |
 | 5,61 | `_accelerometerSigned(index)` | signed variant (name from the SWF binding; not on the wiki) | stub |
 
 The panel also binds `ASnative(4,39)` as `_batteryPower` — category 4
@@ -254,7 +254,7 @@ the fork leaves category 4 alone.
 
 | idx | native | purpose / return | fixture behavior |
 |-----|--------|------------------|------------------|
-| 5,52 | `_backtick(cmd)` | synchronous shell execution → stdout as string | canned response from `fixtures/exec/manifest.txt` (longest command prefix wins); unknown commands log loudly and return `""` |
+| 5,52 | `_backtick(cmd)` | synchronous shell execution → stdout as string | canned response from `fixtures/exec/manifest.txt` (longest command prefix wins); unknown commands log loudly and return `""`. Real semantics, not fixtures, for `rm /psp/ifalarm` (backup-alarm dismiss) and `…/scripts/enable_intro` / `disable_intro` (toggle `/psp/disable_intro` in the rootfs) |
 
 (The asynchronous variant is the `exec://` URL scheme, answered from
 the same fixture store by `ChumbyNavigator`.)
