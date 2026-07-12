@@ -461,8 +461,32 @@ stable identity — see below.
 signature on the wire (proven by reverse-engineering a real registered
 reference chumby: its `dcid` tool only reads a `<skin>` branding value from
 `/dev/dcid`, while device identity came from a separate crypto processor via
-`cpi`/`guidgen.sh` — which our hardware doesn't have). So we synthesise the
-GUID (`real_ident::resolve_guid`), in priority order:
+`cpi`/`guidgen.sh` — which our hardware doesn't have). Two external sources
+confirm this split, both found 2026-07-12:
+
+- **DCID is branding, not identity.** A chumby-forum thread
+  ([post 3193](https://forum.chumby.com/viewtopic.php?id=3193)) describes
+  the DCID as a "daughtercard id" — a tag-based binary structure (≤768 bytes)
+  in a small flash on a daughterboard, read/written by the `dcid` tool. A
+  stock US unit is just `<chum><skin>0000</skin></chum>`; regional variants
+  add distributor/language nodes. It selects skin and localized content —
+  no key, no signature. Matches what we saw on the reference box.
+- **The GUID is the crypto chip's, and unreproducible off-device.** Chumby
+  released the crypto-processor tool
+  ([github.com/sutajiokousagi/cpi](https://github.com/sutajiokousagi/cpi),
+  © Chumby Industries 2007-8). `cpi` talks to a *serial-attached* RSA chip
+  (`/dev/ttyS2` on ironforge, our platform — a prebuilt `arm-linux-ironforge`
+  binary is even checked in); `cpi -p` calls `cpi_get_putative_id` and prints
+  a key's "putative ID", which is exactly the string `guidgen.sh` (`cpi.sh -p`)
+  feeds the panel as the GUID. The RSA private key never leaves the chip
+  (the production tests need `Crypt-OpenSSL-RSA` + `Digest-SHA1`), so the
+  original GUID cannot be regenerated without the hardware — which is why we
+  *synthesise* a stand-in rather than emulate the chip. If a future need ever
+  demanded genuine crypto-processor semantics, this released source is the
+  starting point; for registration against the revived chumby.com it is not
+  needed (the account claims whatever GUID the box presents).
+
+So we synthesise the GUID (`real_ident::resolve_guid`), in priority order:
 
 1. `device_guid` from player.toml (an explicit owner-set UUID),
 2. else a salted MD5 of the SoC serial (a Raspberry Pi — stable across
@@ -516,9 +540,14 @@ is more durable than on hardware.
 `/tmp/widgetcache/<id>?_chumby_widget_instance_index=…` — the widget
 parameters riding as the query. `navigator.rs::intercept` therefore treats
 both `file://` URLs and scheme-less `/…` paths as rootfs candidates, keyed
-on the path with the query stripped (Ruffle still parses the query into the
-loaded movie's vars); a rootfs miss falls through so real-disk paths (the
-controlpanel SWF, fixture widgets) still load.
+on the path with the query stripped; a rootfs miss falls through so
+real-disk paths (the controlpanel SWF, fixture widgets) still load. The
+response URL for a scheme-less hit is rewritten to `file://…`, because
+`SwfMovie::append_parameters_from_url` extracts the query into the loaded
+movie's `_root` vars only when `Url::parse` succeeds on the response URL —
+a raw `/tmp/…` fails silently and every widget parameter is dropped,
+`_chumby_clock_format` the visible casualty (found on-device 2026-07-12;
+desktop fixture widgets load over `file://` hrefs and never hit it).
 
 **UI policy.** `main-channel` and `main-delete` are dead-ends without the
 remote service, so their disable rules carry `only_without_chumby_access`

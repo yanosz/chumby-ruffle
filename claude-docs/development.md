@@ -396,6 +396,16 @@ Each of these cost real time.
   `ALSA_CONFIG_PATH=<file>` with
   `</usr/share/alsa/alsa.conf>` + `pcm.!default { type null }` +
   `ctl.!default { type null }`.
+- **A fixture response with an unparseable URL silently eats loadMovie
+  query params.** `SwfMovie::append_parameters_from_url` runs `Url::parse`
+  on the *response* URL and drops the whole query on failure — no panic,
+  no warn at default log level. The widget cache's scheme-less
+  `/tmp/widgetcache/<id>?_chumby_…` requests hit this: widgets loaded and
+  rendered, but arrived with no parameters, so 24h mode "didn't persist"
+  (2026-07-12, device only — desktop fixture widgets use `file://` hrefs).
+  `ChumbyNavigator::fetch` now rewrites scheme-less response URLs to
+  `file://…`. If a loaded movie ever ignores its parameters again, check
+  the response URL shape first.
 - **`AlarmSet.repair()` (F2:11811) force-resets alarm[0]** after every
   parse: `_backup=true`, `_backupDelay=5`, `_duration=default`,
   `_autoDismiss=false` — whatever `/psp/alarms` says. The first alarm

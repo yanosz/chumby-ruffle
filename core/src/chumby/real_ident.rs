@@ -2,7 +2,8 @@
 //! machine, replacing the crypto processor the original hardware had.
 //!
 //! On real hardware `guidgen.sh` (= `cpi.sh -p`) and `chumby_version -n`
-//! both read the crypto chip. Here the stable seed is the SoC serial from
+//! both read the crypto chip (the identity model and its sources are in
+//! design.md). Here the stable seed is the SoC serial from
 //! the device tree (survives reflashes and SD swaps); its GUID is a salted
 //! md5 of the serial in the 8-4-4-4-12 shape the fixture also uses. A
 //! machine without a serial (dev box, CI) instead gets a random v4 GUID,
