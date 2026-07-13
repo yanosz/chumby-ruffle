@@ -300,6 +300,17 @@ other frames of the same container (the settings grid reuses depths across
 frames) and would otherwise cry wolf. Logging is transition-damped per rule:
 acquired / parent-only / gone.
 
+Three rule conditions make dead-ends lift themselves when the capability
+appears: `only_without_chumby_access` (channel/delete, §12),
+`only_without_brightness` (§13), and `only_without_intro` — the revived
+`info-intro` rule dims the Info screen's INTRO button while
+`/usr/widgets/intro.swf` is absent from the rootfs (the owner-copied
+intro is not downloadable; without the file the replaced `playIntro`
+(§3) would stage a load that never completes — a black dead-end,
+observed on the first vanilla-card install 2026-07-13). The check is
+`ChumbyFs::file_exists`, so a dangling launcher symlink to a
+not-yet-copied owner file correctly counts as absent.
+
 `disable` sets `enabled = false` on the target **and its direct children**,
 then dims `_alpha` to ~45. The child pass is not belt-and-braces: AVM1
 `enabled` does not cascade, and every chumby button puts its hit handler on

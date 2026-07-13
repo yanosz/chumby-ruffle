@@ -72,6 +72,9 @@ struct Rule {
     /// When true, the rule applies only while no brightness backend exists
     /// (no kernel backlight, no brightness_ctl — brightness.rs).
     only_without_brightness: bool,
+    /// When true, the rule applies only while the intro movie is absent
+    /// from the rootfs (`/usr/widgets/intro.swf` — owner-copied, intro.rs).
+    only_without_intro: bool,
 }
 
 static POLICY: OnceLock<Vec<Rule>> = OnceLock::new();
@@ -150,12 +153,17 @@ fn parse(text: &str) -> Vec<Rule> {
             .get("only_without_brightness")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
+        let only_without_intro = entry
+            .get("only_without_intro")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         rules.push(Rule {
             id,
             action,
             selectors,
             only_without_chumby_access,
             only_without_brightness,
+            only_without_intro,
         });
     }
     rules
@@ -234,12 +242,22 @@ pub fn apply<'gc>(activation: &mut Activation<'_, 'gc>) {
     let brightness = super::host::host()
         .map(|h| h.brightness_available())
         .unwrap_or(false);
+    // And for the intro: the rule stands until the owner-copied movie
+    // exists where the replaced playIntro stages it from (intro.rs). The
+    // rootfs view follows symlinks, so the launcher's dangling link to a
+    // not-yet-copied owner file counts as absent.
+    let intro = super::host::host()
+        .map(|h| h.fs().file_exists("/usr/widgets/intro.swf"))
+        .unwrap_or(false);
 
     for (index, rule) in rules.iter().enumerate() {
         if rule.only_without_chumby_access && chumby_access {
             continue;
         }
         if rule.only_without_brightness && brightness {
+            continue;
+        }
+        if rule.only_without_intro && intro {
             continue;
         }
         let mut target = None;
@@ -389,5 +407,12 @@ selectors = []
             .map(|r| r.id.as_str())
             .collect();
         assert_eq!(gated, ["settings-brightness"]);
+        // INTRO lifts as soon as the owner-copied intro.swf exists.
+        let gated: Vec<&str> = rules
+            .iter()
+            .filter(|r| r.only_without_intro)
+            .map(|r| r.id.as_str())
+            .collect();
+        assert_eq!(gated, ["info-intro"]);
     }
 }

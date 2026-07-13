@@ -58,8 +58,7 @@ selectors = ["controlPanel/depth:15/name:networkButton"]
 
 # CHUMBY INFO (E6): deliberately NOT disabled — it is the gateway to the Info
 # screen (E6) and the Licenses viewer (E7), both of which we ship. Its geek
-# button IS disabled (unwanted); the intro button is live again since the
-# playIntro replacement (intro.rs). The InfoPanel (DS1665) is placed as
+# button IS disabled (unwanted). The InfoPanel (DS1665) is placed as
 # "info" on the settings grid's "info" frame, and the button is a named
 # child — no depth fallback, and depth:1 would collide with the clock
 # panel's slot on another frame of the same grid.
@@ -69,6 +68,17 @@ selectors = ["controlPanel/depth:15/name:networkButton"]
 id        = "info-geek"
 action    = "disable"
 selectors = ["controlPanel/depth:15/name:info/name:piButton"]
+
+# INTRO: live since the playIntro replacement (intro.rs) — but only when
+# the movie it stages, rootfs /usr/widgets/intro.swf, actually exists.
+# The intro is firmware (owner-copied, not downloadable); absent, the
+# button would stage a load that never completes: a black dead-end.
+# Lifts by itself once the owner copies the file.
+[[rule]]
+id        = "info-intro"
+action    = "disable"
+only_without_intro = true
+selectors = ["controlPanel/depth:15/name:info/name:introButton"]
 
 # TOUCHSCREEN (E4): calibration is meaningless on the Pi's display path.
 [[rule]]
