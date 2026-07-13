@@ -135,7 +135,8 @@ ruffle_desktop \
 An optional `fixtures/player.toml` (gitignored; absent = defaults;
 template: `fixtures/player.toml.example`) carries the owner knobs —
 `volume_cap` (percent, panel 100 % maps to it), `access_chumby_com` and
-`enable_lyrion` (both 0/1, default 0) — read once at start (requirements
+`enable_lyrion` (both 0/1, default 0), `brightness_ctl` (path to a 0/1/2
+brightness executable, FR16) — read once at start (requirements
 FR14/FR15).
 
 `-Pbuiltin=1` additionally takes the offline boot path (no authorize round
@@ -272,6 +273,23 @@ SHOUTcast / blue octy radio / Sleep Sounds — directory fetches log
 station → PLAY → tune-in redirect → mpv on the real stream URL);
 `enable_lyrion = 1` brings back Squeezebox Server. Navigation: bend →
 Music icon (570,335); rows start at (150,160), PLAY at (57,458).
+
+**Brightness** (desktop, verified 2026-07-13, both modes): with no
+`/sys/class/backlight` and no `brightness_ctl`, Settings renders the
+BRIGHTNESS icon dimmed like NETWORK/TOUCHSCREEN (the
+`only_without_brightness` rule holding). With
+`brightness_ctl = "<script>"` in `fixtures/player.toml`: boot logs
+`chumby_version -h -> "3.7"` and the script runs once with `0`
+(`restoreDimFromFile`); the icon is live; it opens the **radio view**
+("Set screen brightness", Full/Low); selecting Low runs the script with
+`1`, Full with `0` (log: `_setLCDMute(1)` / `(0)`); DONE writes
+`/psp/dimlevel` — that write lands in `fixtures/rootfs/psp/` like all
+panel persistence, so clean it up after a walkthrough. The slider→sysfs
+path is unit-tested (`test_brightness_knob_write_drives_backlight`,
+scaling in `brightness.rs`); exercising it live needs a machine with a
+real backlight device. Navigation (window coords): bend → SETTINGS
+(448,458) → BRIGHTNESS (527,163); radio Full (163,188), Low (163,280);
+DONE (557,463).
 
 **Intro** (desktop, verified 2026-07-11): needs `intro.swf` from the backup
 at `fixtures/rootfs/usr/widgets/intro.swf` (gitignored), and on a box with

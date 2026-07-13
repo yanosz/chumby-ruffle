@@ -162,6 +162,10 @@ impl ChumbyHost for RealNetHost {
     fn config(&self) -> &super::config::PlayerConfig {
         self.inner.config()
     }
+
+    fn brightness_available(&self) -> bool {
+        self.inner.brightness_available()
+    }
 }
 
 fn read_primary_interface() -> Option<NetInfo> {

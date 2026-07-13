@@ -69,6 +69,9 @@ struct Rule {
     /// These are dead-ends without the remote service (channel management,
     /// delete) that come alive under `access_chumby_com`.
     only_without_chumby_access: bool,
+    /// When true, the rule applies only while no brightness backend exists
+    /// (no kernel backlight, no brightness_ctl — brightness.rs).
+    only_without_brightness: bool,
 }
 
 static POLICY: OnceLock<Vec<Rule>> = OnceLock::new();
@@ -143,7 +146,17 @@ fn parse(text: &str) -> Vec<Rule> {
             .get("only_without_chumby_access")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        rules.push(Rule { id, action, selectors, only_without_chumby_access });
+        let only_without_brightness = entry
+            .get("only_without_brightness")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        rules.push(Rule {
+            id,
+            action,
+            selectors,
+            only_without_chumby_access,
+            only_without_brightness,
+        });
     }
     rules
 }
@@ -217,9 +230,16 @@ pub fn apply<'gc>(activation: &mut Activation<'_, 'gc>) {
             h.config().access_chumby_com && super::real_ident::has_wire_identity(h.config())
         })
         .unwrap_or(false);
+    // Same shape for brightness: the rule stands until a backend exists.
+    let brightness = super::host::host()
+        .map(|h| h.brightness_available())
+        .unwrap_or(false);
 
     for (index, rule) in rules.iter().enumerate() {
         if rule.only_without_chumby_access && chumby_access {
+            continue;
+        }
+        if rule.only_without_brightness && brightness {
             continue;
         }
         let mut target = None;
@@ -362,5 +382,12 @@ selectors = []
             .map(|r| r.id.as_str())
             .collect();
         assert_eq!(gated, ["main-channel", "main-delete"]);
+        // Brightness lifts as soon as a backend exists (backlight or ctl).
+        let gated: Vec<&str> = rules
+            .iter()
+            .filter(|r| r.only_without_brightness)
+            .map(|r| r.id.as_str())
+            .collect();
+        assert_eq!(gated, ["settings-brightness"]);
     }
 }

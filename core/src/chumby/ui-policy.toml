@@ -76,12 +76,14 @@ id        = "settings-touchscreen"
 action    = "disable"
 selectors = ["controlPanel/depth:15/name:touchscreenButton"]
 
-# BRIGHTNESS (E2/altBrightness): not wired on the Pi yet. Disabled for
-# now; the future brightness milestone (plan) must RE-ENABLE this entry
-# (drop this rule) once panel brightness control lands.
+# BRIGHTNESS (E2): disabled only while no brightness backend exists — no
+# kernel backlight found and no brightness_ctl configured (brightness.rs).
+# With a backend the button is live: sliders (altBrightness) on the
+# default path, the bright/dim radio view under brightness_ctl.
 [[rule]]
 id        = "settings-brightness"
 action    = "disable"
+only_without_brightness = true
 selectors = ["controlPanel/depth:15/name:brightnessButton"]
 
 # Main control-panel bar: the "mainButtons" sprite (controlPanel frame

@@ -15,6 +15,8 @@
 //!   chumby HTTP endpoints
 //! - `audio`: mpv-backed player behind the audio native family
 //! - `backup_alarm`: the dead-man beep chumbalarmd provided on real hardware
+//! - `brightness`: real backlight behind the panel's brightness writes
+//!   (kernel backlight sysfs, or the owner's `brightness_ctl` executable)
 //! - `input`: simulated-input control channel (stdin + FIFO line commands)
 //! - `music_sources`: VM-level removal of music sources the appliance
 //!   cannot serve from `MusicPlayer.musicSources`
@@ -24,6 +26,7 @@
 pub mod audio;
 pub mod avm;
 pub mod backup_alarm;
+pub mod brightness;
 pub mod config;
 pub mod fixture;
 pub mod host;

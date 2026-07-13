@@ -84,6 +84,11 @@ pub trait ChumbyHost: Send + Sync {
 
     /// Owner-level knobs from `<fixtures>/player.toml` (config.rs).
     fn config(&self) -> &PlayerConfig;
+
+    /// True when a brightness backend exists — a kernel backlight or a
+    /// configured `brightness_ctl` (brightness.rs). Lifts the
+    /// `settings-brightness` ui-policy rule.
+    fn brightness_available(&self) -> bool;
 }
 
 /// Process-global host registry.
