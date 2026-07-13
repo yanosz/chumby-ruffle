@@ -133,6 +133,19 @@ wraps them in the `<widget_instance>`/`<profile>` envelope and writes
 `fixtures/http/xml.chumby.com/xml/profiles`. The schema the panel accepts is
 loose (requirements FR6); the dashboard preview thumbnail is §6.
 
+The panel also merges a **local profile** on its own: after every profile
+load, `mergeLocalProfile()` (F2:4343) reads the first existing of
+`/tmp/profile.xml`, `/mnt/usb/profile.xml`, `/mnt/storage/profile.xml`,
+`/psp/profile.xml` via `_getFile` and concatenates its `<widget_instance>`
+entries onto the channel — the wiki's "mixing local widgets into a channel"
+trick, and it needs no chumby-specific Rust beyond the already-real (5,50).
+Verified on the desktop 2026-07-13: a `profile.xml` in the fixtures' `/psp`
+traced "adding 1 local widget instances" and joined the rotation. It only
+*adds to* a loaded channel, so the generator still owns the base profile;
+but "drop in a widget without regenerating" is panel-native, which is why
+the appliance's boot-time regeneration service was dropped (chumby-pi
+design §4).
+
 ### RealNetHost
 
 A decorator, not a sibling: it wraps `FixtureHost`, overrides the network
