@@ -144,8 +144,9 @@ beyond the already-real (5,50). Verified on the desktop 2026-07-13, offline:
 a `profile.xml` in the fixtures' `/psp` traced "adding 1 local widget
 instances" and joined the rotation; it also works over a channel whose
 `<widget_instances>` is empty. It only *adds to* a loaded channel, so the
-static base profile stays. The appliance generates `/tmp/profile.xml` from
-an owner widgets folder at launch (chumby-pi design §4).
+static base profile stays. The appliance ships a user-run helper that
+generates `/psp/profile.xml` from an owner widgets folder (chumby-pi
+design §4).
 
 ### RealNetHost
 
