@@ -82,7 +82,6 @@ Around the fork, at the repo root:
 | `run-controlpanel.sh` | the desktop run |
 | `chumby-ctl` | writes bend/click/drag to the player's control FIFO |
 | `verify-screens.sh` | drives the panel to named screens and screenshots them |
-| `chumby-widget-channel` | regenerates the widget-channel profile fixture |
 | `claude-docs/appendix/` | the ffdec export of the panel — gitignored, ~36 MB, **the law** |
 | `claude-docs/images/` | panel screenshots — gitignored (chumby artwork) |
 
@@ -215,14 +214,15 @@ The wiki lists the time family under category 103; the SWF binds it at
 5,176–178. The wiki numbers a `PlayAudio` at 5,151; the panel calls
 `_playAudio` at 5,144.
 
-## 4b. Regenerating the widget channel
+## 4b. Changing the widget channel
 
-`fixtures/http/xml.chumby.com/xml/profiles` is generated, not hand-written.
-Each widget carries a `*.widget.xml` sidecar next to its SWF in
-`fixtures/widgets/`; `./chumby-widget-channel` enumerates them and emits the
-profile plus the two `/tmp/currentProfile*` files. It skips the rewrite when
-the sidecar set is unchanged (`--force` overrides). A committed profile
-ships in the tree, so a debug run never needs to regenerate first.
+`fixtures/http/xml.chumby.com/xml/profiles` is a static, hand-edited
+fixture: the shipped widgets, each as a `<widget_instance>` (design §3 has
+the schema notes). Adding a shipped widget means its SWF (+ thumbnail) in
+`fixtures/widgets/` and an instance entry here. Anything not shipped merges
+in through a local `profile.xml` instead — no fixture edit involved. (The
+sidecar/generator machinery that used to produce this file was deleted
+2026-07-13.)
 
 ## 5. Verify
 

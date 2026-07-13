@@ -29,17 +29,6 @@ if [ ! -f "$SWF" ]; then
     exit 1
 fi
 
-# The panel fetches its widget channel from this profile. The generator
-# (./chumby-widget-channel) produces it from fixtures/widgets/*.widget.xml;
-# a committed copy ships in the tree, so debugging runs need not regenerate
-# first. Just confirm the definition-list is present before launching.
-PROFILE="$DIR/fixtures/http/xml.chumby.com/xml/profiles"
-if [ ! -s "$PROFILE" ]; then
-    echo "widget channel profile missing/empty at $PROFILE"
-    echo "Generate it with: ./chumby-widget-channel"
-    exit 1
-fi
-
 [ -p "$CTL" ] || mkfifo -m 600 "$CTL" || exit 1
 
 if [ ! -x "$RUFFLE" ]; then

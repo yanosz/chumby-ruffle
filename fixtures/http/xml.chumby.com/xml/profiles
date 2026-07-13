@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Static channel: the shipped widgets. Hand-edit when that set changes;
+     everything else merges in from a local profile.xml (design §3). -->
 <profile id="1">
   <name>chumbypi-channel</name>
   <description/>
