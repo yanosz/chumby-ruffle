@@ -125,13 +125,29 @@ the on-device Play All scan proves slow.
 ### The widget channel
 
 Real chumby fetched its channel — a list of widget instances — from
-chumby.com. We generate one from the widgets we ship. Each widget carries a
-`*.widget.xml` sidecar next to its SWF holding exactly the `<widget>`
-element the panel consumes (name, description, version, mode, access,
-`<movie href>`, optional `<thumbnail href>`); `chumby-widget-channel`
-wraps them in the `<widget_instance>`/`<profile>` envelope and writes
-`fixtures/http/xml.chumby.com/xml/profiles`. The schema the panel accepts is
-loose (requirements FR6); the dashboard preview thumbnail is §6.
+chumby.com. We ship a **static fixture** with a deliberately **empty**
+instance list (`fixtures/http/xml.chumby.com/xml/profiles`): just the
+envelope the panel needs to authorize and start its rotation — it
+tolerates an empty channel (verified 2026-07-13). The schema the panel
+accepts is loose (requirements FR6); the dashboard preview thumbnail is
+§6. (Until 2026-07-13 this file was generated at boot from per-widget
+sidecar XML by a `chumby-widget-channel` script, and briefly carried the
+stock clocks statically — all widgets, clocks included, now arrive via
+the merge below.)
+
+Everything beyond the shipped set rides on the panel's own **local profile
+merge**: after every profile load, `mergeLocalProfile()` (F2:4343) reads the
+first existing of `/tmp/profile.xml`, `/mnt/usb/profile.xml`,
+`/mnt/storage/profile.xml`, `/psp/profile.xml` via `_getFile` and
+concatenates its `<widget_instance>` entries onto the channel — the wiki's
+"mixing local widgets into a channel" trick, needing no chumby-specific Rust
+beyond the already-real (5,50). Verified on the desktop 2026-07-13, offline:
+a `profile.xml` in the fixtures' `/psp` traced "adding 1 local widget
+instances" and joined the rotation; it also works over a channel whose
+`<widget_instances>` is empty. It only *adds to* a loaded channel, so the
+static base profile stays. The appliance ships a user-run helper that
+generates `/psp/profile.xml` from an owner widgets folder (chumby-pi
+design §4).
 
 ### RealNetHost
 
