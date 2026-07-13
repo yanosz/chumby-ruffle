@@ -89,8 +89,10 @@ The families that must behave *sensibly*, not merely exist:
   `_setTimeZone` (5,178). These must round-trip: set → get returns what was
   set (verified against real hardware).
 
-The panel does **not** use the brightness natives; it writes
-`/proc/sys/sense1/brightness` (0–65535) directly via `_putFile` (F2:9119).
+The panel uses brightness natives only in `brightness_ctl` mode (FR16):
+presented hardware 3.8 makes it write `/proc/sys/sense1/brightness`
+(0–65535) directly via `_putFile` (F2:9119); presented 3.6/3.7 makes
+`setDim` call `_setLCDMute` (5,20) with 0/1/2 instead (F2:9021).
 
 ### FR4 — Answer the shell-command catalog
 
@@ -154,7 +156,8 @@ faithful.
   PLAY that is inert for mp3files (`resumeFrom()` replays an in-memory
   track list a fresh process doesn't have — found 2026-07-11). The host
   deletes `musicsource` at start; full `/tmp` volatility is a §3 gap.
-- **Device files**: `/proc/sys/sense1/brightness` (write, 0–65535),
+- **Device files**: `/proc/sys/sense1/brightness` (write, 0–65535 — drives
+  a detected kernel backlight, FR16),
   `/var/run/btplay.pid`, `/etc/{hardware,software}_version`,
   `/etc/firmware_build`, `/LICENSES/{gpl,lgpl}.txt`,
   `/usr/chumby/alarmtones/<name>.mp3`, `/usr/widgets/intro.swf`.
@@ -218,7 +221,8 @@ that would answer a given call.
 
 Some panel controls are meaningless or harmful on a Pi: the timezone picker
 and NTP toggle (the OS owns time), the network and touchscreen-calibration
-settings, brightness while it is unwired, channel management while there is
+settings, brightness while no backend exists (no kernel backlight, no
+`brightness_ctl` — FR16), channel management while there is
 only one local channel, and the social buttons. They must be *visibly*
 disabled rather than silently ignored — a control that looks live but does
 nothing is the worst outcome, especially around alarms.
@@ -365,6 +369,7 @@ logs and answers defaults (NFR3).
 | `volume_cap` | 100 | Percent. **A scale, not a clamp** (Jan, 2026-07-11): the panel's 100 % maps to the cap, proportionally below. Panel space stays honest 0–100 everywhere the panel reads it back (`/psp/volume`, `_getSystemVolume`); only what reaches the audio backend is scaled. The backup-alarm Klaxon (FR13) deliberately ignores the cap — it keeps its own `/psp/backup_alarm_volume` knob at full range (Jan, 2026-07-11). |
 | `access_chumby_com` | 0 | Opt-in chumby.com traffic. Today it gates exactly the music proxies (FR15): the SHOUTcast / blue octy radio / Sleep Sounds sources appear and their hosts pass through. Off (the default), NFR6 holds unconditionally. The remote-channels milestone will widen it. |
 | `enable_lyrion` | 0 | Shows the Squeezebox Server source (FR15). The player side is complete; the server side is unverified and out of scope (Jan, 2026-07-11). |
+| `brightness_ctl` | unset | Path to an executable; switches brightness to the discrete radio view and runs the program with the level 0/1/2 as its argument (FR16). Must exist and be executable at load, else warned and ignored. |
 
 The committed template is `fixtures/player.toml.example`; the live file is
 gitignored.
@@ -404,6 +409,42 @@ except iPod, which `availableSources` force-shows on every platform but
 The alarm audio list iterates the same array, so a hidden source is gone
 from the alarm wizard too. `/psp/music_order` (the panel's own file) only
 reorders and cannot remove; externalmusic.xml sources are unaffected.
+
+### FR16 — Backlight brightness
+
+Two modes (decisions Jan, 2026-07-13; mechanism [design.md](design.md) §13):
+
+- **Default: a kernel backlight.** The player looks under
+  `/sys/class/backlight` at start — `rpi_backlight` first, else a lone
+  device (names are not stable across panels; the Touch Display 2 registers
+  under its DSI panel's name), several without `rpi_backlight` = none. The
+  panel keeps hardware 3.8 and shows its day/night **sliders**
+  (`altBrightness`); their writes to `/proc/sys/sense1/brightness`
+  (0–65535) are intercepted and scaled linearly onto the device's own
+  `0–max_brightness` — the max is read per device, never assumed (255 on
+  the RPi displays, thousands on Intel panels, 1 on binary ones). A
+  non-zero panel value lands at ≥1 so "dimmest" cannot round to "off";
+  0 stays 0 (the panel's screen-off state installs its own
+  touch-to-restore). Night mode rides for free: the panel persists
+  `/psp/{day,night}mode_brightness` itself and replays them through the
+  same write.
+- **`brightness_ctl` (FR14): an owner executable, discrete 0/1/2.** The
+  host answers `chumby_version -h` with **"3.7"**, which is what routes the
+  panel to the older models' bright/dim **radio view** and makes
+  `ScreenManager.setDim` call `_setLCDMute(0|1|2)` (LCD_ON/DIM/OFF); the
+  executable runs with the level as its only argument. Every other
+  `hardware_version` read in the SWF is URL metadata or display text
+  (verified site-by-site 2026-07-13), so the one observable side effect is
+  a registered box reporting `hw=3.7` to chumby.com. This mode
+  deliberately amends FR10's "hardware_version stays 3.8" — presented
+  hardware is how the panel selects its brightness UI, and there is no
+  other non-surgical switch.
+
+No backend (no backlight found, no `brightness_ctl`) = the
+`settings-brightness` ui-policy rule keeps the button disabled (FR9).
+Writing the sysfs file needs permission (root-owned 0644); granting the
+kiosk user access (udev rule) is the appliance's job, and the player warns
+once and continues if writes fail.
 
 ---
 
@@ -497,7 +538,7 @@ Carried forward, in the order they are expected to land.
 | Gap | Note |
 |-----|------|
 | `/tmp` volatility | Real hardware's `/tmp` is a ramdisk, wiped per boot; the virtual rootfs persists it. The one observable consequence (stale `/tmp/musicsource` → inert resume PLAY) is fixed pointwise — the host deletes that file at start. Clearing all of `/tmp` at start would be faithful, but collides with the boot machinery: `chumby-widget-channel` pre-writes `currentProfileID/Name` there before the player starts, and seven committed fixtures live there. A session of its own, if ever. |
-| Brightness | The panel's `/proc/sys/sense1/brightness` writes and `_setLCDMute` (5,20) are not mapped to a real backlight. Blocked on display hardware that can dim. |
+| Brightness on-device | The player side shipped 2026-07-13 (FR16, desktop-verified both modes). What remains is hardware: the current ILI9486 TFT's backlight rail is tied to 3.3 V and cannot dim, so on the device the button stays honestly disabled until a dimmable display (candidate survey: `brightness-research.md`, to be folded in with the purchase decision). The 0–65535→max scaling is linear; whether it needs a perceptual curve is an on-device judgement deferred to that hardware. |
 | Boot-time intro | The in-panel half shipped 2026-07-11: the INTRO button plays `intro.swf` on the localCache path via prototype replacement (`chumby/intro.rs`, design §3), and the `enable_intro`/`disable_intro` backticks really toggle `/psp/disable_intro` in the rootfs. Player-side readiness **fully verified 2026-07-12** (development.md §5): the standalone ending — exit → control screen → both flag buttons writing/removing the flag → `fscommand("quit")` actually exiting the process (the swallow stands down without `Object._chumby`) — and a same-session INTRO replay both work. What remains is purely the *boot* entry point: real hardware's `rcS` runs `start_intro` — a standalone player on `intro.swf`, every boot until `/psp/disable_intro` exists — *before* the panel. Undecided (Jan): a pre-panel player invocation in the appliance launcher (faithful, chumby-pi side) vs. skipping it. |
 | `clock_format` live update | The 12/24h toggle persists to `/psp/clock_format`, but a running widget only reads it at start. Real hardware pushes `_setSlaveVar("_chumby_clock_format", …)` every heartbeat; the in-movie path has no slave-var bridge. Recorded, no fix planned. (Distinct bug, fixed 2026-07-12: on *cached account widgets* the format never arrived even at widget start — the scheme-less response URL dropped the whole parameter query; design §12.) |
 | Squeezebox / Lyrion | Out of scope (Jan, 2026-07-11); the source hides behind `enable_lyrion=0`. The player side is done — what is open is purely server-side: a scratchpad-extracted Lyrion 9.1.1 booted and answered JSON-RPC, but its `/stream.mp3` 404'd with "invalid skin", an artifact of the improvised install, so whether Lyrion 9.x still speaks the legacy HTTP-player stream was never settled. If ever revisited: a properly installed LMS, and note the dev box's port 9000 belongs to ThinLinc (the panel hardcodes that port). |

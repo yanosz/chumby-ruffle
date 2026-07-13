@@ -20,6 +20,16 @@ access_chumby_com = 0
 # /stream.mp3 player protocol is unverified.
 enable_lyrion = 0
 
+# Discrete brightness mode. Default (unset): the player looks for a kernel
+# backlight under /sys/class/backlight (rpi_backlight preferred, else a
+# lone device), the panel shows its day/night brightness sliders, and their
+# writes drive the backlight; no backlight found = brightness stays
+# disabled in Settings. Set this to an executable to take over instead:
+# the panel switches to the older models' bright/dim radio view and the
+# program runs with the level as its only argument (0 = on, 1 = dim,
+# 2 = off). Must exist and be executable, or it is ignored.
+# brightness_ctl = "/usr/local/bin/backlight"
+
 # Explicit device GUID (8-4-4-4-12) for a box WITHOUT a hardware serial —
 # a dev box, or non-Pi hardware. A Raspberry Pi derives its GUID from the
 # SoC serial and needs nothing here. When set, this becomes the identity

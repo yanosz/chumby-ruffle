@@ -10,10 +10,11 @@
 //! volume_cap = 70        # percent: the panel's 100% maps to this
 //! access_chumby_com = 0  # music-proxy passthrough (FR15); default 0 (NFR6)
 //! enable_lyrion = 0      # show the Squeezebox Server source
+//! brightness_ctl = "/usr/local/bin/backlight"  # discrete 0/1/2 mode
 //! ```
 //! The committed template is `fixtures/player.toml.example`.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlayerConfig {
@@ -45,6 +46,13 @@ pub struct PlayerConfig {
     /// NFR6 still holds: only this deliberately-configured value reaches the
     /// wire; the random dev GUID never does. Stored uppercase 8-4-4-4-12.
     pub device_guid: Option<String>,
+    /// Discrete brightness mode (brightness.rs): an executable run with the
+    /// level 0/1/2 (on/dim/off) as its argument. Setting it switches the
+    /// panel to the older models' bright/dim radio view by answering
+    /// `chumby_version -h` with "3.7" instead of "3.8" — the SWF picks the
+    /// brightness screen on that value (DS1748) and drives `_setLCDMute`.
+    /// Must exist and be executable at load, else warned and ignored.
+    pub brightness_ctl: Option<PathBuf>,
 }
 
 impl Default for PlayerConfig {
@@ -54,6 +62,7 @@ impl Default for PlayerConfig {
             access_chumby_com: false,
             enable_lyrion: false,
             device_guid: None,
+            brightness_ctl: None,
         }
     }
 }
@@ -69,9 +78,10 @@ pub fn load(path: &Path) -> PlayerConfig {
     };
     let config = parse(&text);
     tracing::info!(target: "chumby_host",
-        "player config {}: volume_cap={} access_chumby_com={} device_guid={}",
+        "player config {}: volume_cap={} access_chumby_com={} device_guid={} brightness_ctl={}",
         path.display(), config.volume_cap, config.access_chumby_com,
-        config.device_guid.as_deref().unwrap_or("<none>"));
+        config.device_guid.as_deref().unwrap_or("<none>"),
+        config.brightness_ctl.as_deref().unwrap_or(Path::new("<none>")).display());
     if config.access_chumby_com {
         tracing::warn!(target: "chumby_host",
             "access_chumby_com=1: music proxies pass through to chumby.com \
@@ -113,6 +123,11 @@ fn parse(text: &str) -> PlayerConfig {
                 _ => tracing::warn!(target: "chumby_host",
                     "player config: device_guid must be an 8-4-4-4-12 GUID, got {value} — ignored"),
             },
+            ("brightness_ctl", v) => match v.as_str().map(Path::new) {
+                Some(p) if is_executable(p) => config.brightness_ctl = Some(p.to_owned()),
+                _ => tracing::warn!(target: "chumby_host",
+                    "player config: brightness_ctl {value} is not an executable file — ignored"),
+            },
             _ => tracing::warn!(target: "chumby_host",
                 "player config: unknown key {key:?} ignored"),
         }
@@ -135,6 +150,14 @@ fn as_flag(value: &toml::Value) -> Option<bool> {
         toml::Value::Boolean(b) => Some(*b),
         _ => None,
     }
+}
+
+/// A brightness_ctl that cannot run would leave the panel on the radio view
+/// with dead buttons — the FR9 worst case — so it must prove itself at load.
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path)
+        .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
 }
 
 /// Validate an 8-4-4-4-12 hex GUID and return it uppercased, or `None` if it
@@ -187,6 +210,18 @@ mod tests {
         assert_eq!(parse("volume_cap = \"loud\""), PlayerConfig::default());
         assert_eq!(parse("access_chumby_com = 2"), PlayerConfig::default());
         assert_eq!(parse("some_future_key = 1"), PlayerConfig::default());
+    }
+
+    /// brightness_ctl must point at a real executable, or the panel would
+    /// show the radio brightness view with buttons that do nothing.
+    #[test]
+    fn test_brightness_ctl_requires_executable() {
+        let config = parse("brightness_ctl = \"/bin/sh\"\n");
+        assert_eq!(config.brightness_ctl.as_deref(), Some(Path::new("/bin/sh")));
+        assert!(parse("brightness_ctl = \"/nonexistent/prog\"").brightness_ctl.is_none());
+        assert!(parse("brightness_ctl = \"/etc/hostname\"").brightness_ctl.is_none());
+        assert!(parse("brightness_ctl = 3").brightness_ctl.is_none());
+        assert!(parse("").brightness_ctl.is_none());
     }
 
     #[test]

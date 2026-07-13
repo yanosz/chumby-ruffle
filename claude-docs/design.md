@@ -557,3 +557,46 @@ with no `device_guid` keeps them disabled — enabled-but-broken avoided).
 (add-widget catalog, rating, send/mail) is out of scope (Jan, 2026-07-11),
 so those controls are dead-ends and their endpoints are never passed
 through. This is the last of item 5; there is no Phase 3.
+
+## 13. Brightness
+
+Requirements FR16; all of it in `brightness.rs` plus three small hooks in
+`fixture.rs`. The SWF has two brightness UIs and picks by presented
+hardware (`brightnessButton.onButtonRelease`, DS1748): hw "3.8" →
+`altBrightness`, the day/night sliders, whose every movement lands as a
+`_putFile` of 0–65535 to `/proc/sys/sense1/brightness`
+(`setRawBrightness`, F2:9119); anything else (ironforge) → `brightness`,
+the bright/dim radio view, which drives `ScreenManager.setDim` →
+`_setLCDMute(0|1|2)` (F2:9021). Both panel paths are left exactly as
+authored; the fork chooses between them by answering `chumby_version -h`
+differently — "3.8" from the fixture normally, "3.7" when `brightness_ctl`
+is configured (a special case in `FixtureHost::exec`, ahead of the
+manifest, like the backup-alarm commands). Flipping the presented hardware
+was checked against every `hardware_version` read in the export
+(2026-07-13): besides the three brightness sites it is only `hw=` URL
+metadata and Info-screen text, so the alternative — VM surgery on the
+button handler — would have bought nothing but risk.
+
+The interception points mirror what the panel does on each path:
+
+- **Sliders → kernel backlight.** `RootFs::put_file` recognizes the knob
+  path (any multi-slash spelling) after the rootfs mirror write and hands
+  the parsed value to `Backlight::set_raw`, which scales 0–65535 linearly
+  onto the device's real `0–max_brightness` (read at detection, never
+  assumed), flooring non-zero values at 1 — a slider at "dimmest" must not
+  round to backlight-off, while an exact 0 (the panel's screen-off state,
+  which installs its own touch-to-restore handler) passes through.
+  Detection at startup: `/sys/class/backlight/rpi_backlight` first, else a
+  lone entry, else none — backlight names are not stable across displays.
+  Write failures warn once (sliders write many times a second); granting
+  the kiosk user sysfs write access is a udev rule in the appliance repo.
+- **Radio view → `_setLCDMute`.** The native arm in `FixtureHost::native`
+  spawns the configured executable with the level as its argument (reaped
+  on a thread — the audio.rs zombie lesson) and still stores the value so
+  `_getLCDMute` round-trips. With `brightness_ctl` set, backlight
+  detection is skipped: the owner said "mine".
+
+The `settings-brightness` rule carries `only_without_brightness`, the
+second rule condition after `only_without_chumby_access` (§5), fed by
+`ChumbyHost::brightness_available`. Desktop-verified both ways 2026-07-13
+(development.md §5).

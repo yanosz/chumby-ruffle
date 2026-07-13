@@ -12,6 +12,7 @@
 
 use super::audio::{AudioPlayer, AudioState};
 use super::backup_alarm::BackupAlarm;
+use super::brightness::{self, Backlight};
 use super::config::{self, PlayerConfig};
 use super::host::{self, ChumbyFs, ChumbyHost, DirEntry, DirEntryResult, HostError, HostValue};
 use std::collections::HashMap;
@@ -68,8 +69,17 @@ impl FixtureHost {
 
         let config = config::load(&root.join("player.toml"));
 
+        // brightness_ctl mode owns brightness through _setLCDMute; only the
+        // default slider mode needs a kernel backlight behind the panel's
+        // /proc/sys/sense1/brightness writes (brightness.rs).
+        let backlight = if config.brightness_ctl.is_some() {
+            None
+        } else {
+            Backlight::detect()
+        };
+
         Self {
-            fs: RootFs { root: rootfs_path.clone() },
+            fs: RootFs { root: rootfs_path.clone(), backlight },
             exec_manifest,
             slave_vars: Mutex::new(HashMap::new()),
             native_state: Mutex::new(initial_state),
@@ -279,6 +289,23 @@ impl ChumbyHost for FixtureHost {
                 HostValue::Undefined
             }
 
+            // (5,20): on hw 3.6/3.7 ScreenManager.setDim drives the LCD with
+            // this native (LCD_ON 0 / LCD_DIM 1 / LCD_OFF 2). With
+            // brightness_ctl configured — the mode that presents hw 3.7 —
+            // the level goes to the owner's executable; the store keeps
+            // _getLCDMute (5,19) honest either way.
+            "_setLCDMute" => {
+                if let (Some(program), Some(HostValue::Number(level))) =
+                    (self.config.brightness_ctl.as_deref(), args.first())
+                {
+                    brightness::run_ctl(program, *level);
+                }
+                if let Some(v) = args.first() {
+                    self.native_state.lock().unwrap().insert("LCDMute", v.clone());
+                }
+                HostValue::Undefined
+            }
+
             // Every remaining _setX/_getX pair (volume/balance/mute defaults,
             // LCD brightness, touch click, overlay state, timeouts, ...)
             // shares a name-keyed store: the setter stores its first argument
@@ -315,6 +342,13 @@ impl ChumbyHost for FixtureHost {
         }
         if command == "reload_backup_alarm" {
             return Ok(Vec::new());
+        }
+        // brightness_ctl mode: the settings screen opens the bright/dim
+        // radio view only when hardware_version is not "3.8" (DS1748), and
+        // setDim then calls _setLCDMute — 3.7 is the value that routes both
+        // that way. Everything else reading hw uses it as URL metadata.
+        if command == "chumby_version -h" && self.config.brightness_ctl.is_some() {
+            return Ok(b"3.7".to_vec());
         }
         // Intro flag protocol (intro.swf frames 12/15): the two scripts
         // toggle /psp/disable_intro, which gates the boot-time intro run.
@@ -397,6 +431,10 @@ impl ChumbyHost for FixtureHost {
     fn config(&self) -> &PlayerConfig {
         &self.config
     }
+
+    fn brightness_available(&self) -> bool {
+        self.fs.backlight.is_some() || self.config.brightness_ctl.is_some()
+    }
 }
 
 impl FixtureHost {
@@ -444,6 +482,14 @@ fn is_music_host(host: &str) -> bool {
     host == "shoutcast.chumby.com" || host == "bor.chumby.com"
 }
 
+/// The panel's backlight knob, `/proc/sys/sense1/brightness` (F2:9119), in
+/// any of its multi-slash spellings.
+fn is_brightness_knob(path: &str) -> bool {
+    path.split('/')
+        .filter(|c| !c.is_empty() && *c != ".")
+        .eq(["proc", "sys", "sense1", "brightness"])
+}
+
 /// "_setSystemVolume" -> "SystemVolume"
 fn state_key(name: &str) -> &str {
     &name[4..]
@@ -473,6 +519,9 @@ fn default_for_getter(name: &str) -> HostValue {
 /// Writes are confined (no `..`, absolute panel paths become relative).
 struct RootFs {
     root: PathBuf,
+    /// Real display behind the panel's `/proc/sys/sense1/brightness` writes
+    /// (0–65535, F2:9119); the write still lands in the rootfs mirror.
+    backlight: Option<Backlight>,
 }
 
 impl RootFs {
@@ -504,7 +553,18 @@ impl ChumbyFs for RootFs {
         if let Some(parent) = p.parent() {
             std::fs::create_dir_all(parent).map_err(HostError::Io)?;
         }
-        std::fs::write(p, data).map_err(HostError::Io)
+        std::fs::write(p, data).map_err(HostError::Io)?;
+        if let Some(backlight) = &self.backlight {
+            if is_brightness_knob(path) {
+                if let Some(v) = std::str::from_utf8(data)
+                    .ok()
+                    .and_then(|s| s.trim().parse::<f64>().ok())
+                {
+                    backlight.set_raw(v);
+                }
+            }
+        }
+        Ok(())
     }
 
     fn file_exists(&self, path: &str) -> bool {
@@ -575,7 +635,7 @@ mod tests {
         std::fs::write(usb.join("b.ogg"), b"x").unwrap();
         std::os::unix::fs::symlink(usb.join("Album"), usb.join("loop")).unwrap();
 
-        let fs = RootFs { root: root.clone() };
+        let fs = RootFs { root: root.clone(), backlight: None };
 
         // Sorted by name (byte order): Album, a.mp3, b.ogg, loop —
         // and the messy panel path form resolves.
@@ -605,6 +665,88 @@ mod tests {
         assert_eq!(fs.dir_entry("/mnt/usb", 4), DirEntryResult::End);
         assert_eq!(fs.dir_entry("/mnt/nosuch", 0), DirEntryResult::InvalidPath);
         assert_eq!(fs.dir_entry("/mnt/usb/a.mp3", 0), DirEntryResult::InvalidPath);
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// The panel's slider-mode brightness write (`_putFile` to
+    /// /proc/sys/sense1/brightness, 0–65535, F2:9119) must reach the real
+    /// backlight scaled to its own max, while still landing in the rootfs
+    /// mirror like any other write.
+    #[test]
+    fn test_brightness_knob_write_drives_backlight() {
+        let root = std::env::temp_dir()
+            .join(format!("chumby-fixture-backlight-test-{}", std::process::id()));
+        let class = root.join("class-backlight");
+        let dev = class.join("rpi_backlight");
+        std::fs::create_dir_all(&dev).unwrap();
+        std::fs::write(dev.join("max_brightness"), "255").unwrap();
+        std::fs::write(dev.join("brightness"), "0").unwrap();
+
+        let fs = RootFs {
+            root: root.join("rootfs"),
+            backlight: Backlight::detect_in(&class),
+        };
+        // Panel 50%: setDim writes int(50 × 655.35).
+        fs.put_file("//proc/sys/sense1/brightness", b"32767").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dev.join("brightness")).unwrap(),
+            "127"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join("rootfs/proc/sys/sense1/brightness")).unwrap(),
+            "32767"
+        );
+        // Other writes don't touch the backlight.
+        fs.put_file("/psp/dimlevel", b"0").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dev.join("brightness")).unwrap(),
+            "127"
+        );
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// brightness_ctl mode: hardware_version answers "3.7" so the panel
+    /// opens the bright/dim radio view (DS1748) and drives setDim →
+    /// _setLCDMute(0|1|2); the level reaches the configured executable as
+    /// its argument, and _getLCDMute still round-trips.
+    #[test]
+    fn test_brightness_ctl_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir()
+            .join(format!("chumby-fixture-brctl-test-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let level_file = root.join("level");
+        let script = root.join("blctl.sh");
+        std::fs::write(
+            &script,
+            format!("#!/bin/sh\necho \"$1\" > \"{}\"\n", level_file.display()),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::write(
+            root.join("player.toml"),
+            format!("brightness_ctl = \"{}\"\n", script.display()),
+        )
+        .unwrap();
+
+        let host = FixtureHost::new(&root);
+        assert!(host.brightness_available());
+        assert_eq!(host.exec("chumby_version -h").unwrap(), b"3.7");
+
+        host.native(20, "_setLCDMute", &[HostValue::Number(2.0)]);
+        // The ctl runs detached (reaped on a thread); poll for its effect.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if let Ok(s) = std::fs::read_to_string(&level_file) {
+                assert_eq!(s.trim(), "2");
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "brightness_ctl never ran");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert_eq!(host.native(19, "_getLCDMute", &[]), HostValue::Number(2.0));
 
         std::fs::remove_dir_all(&root).ok();
     }

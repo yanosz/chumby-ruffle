@@ -43,6 +43,7 @@ All chumby code lives in `core/src/chumby/`:
 | `avm.rs` | the vendor-function table |
 | `navigator.rs` | intercepts the panel's `exec://` and chumby.com requests |
 | `audio.rs` | plays audio through mpv |
+| `brightness.rs` | drives a real backlight (kernel sysfs, or an owner-configured executable) |
 | `input.rs` | feeds simulated bend-sensor and pointer input |
 | `ui_policy.rs` | dims and disables panel controls the host platform can't support |
 
@@ -65,8 +66,9 @@ execution, URL fetches, and filesystem access. `FixtureHost` answers all
 four from a fixtures directory (`--chumby-fixtures`). Because the boundary
 is this narrow, a host that reports something real can be layered on top of
 it: `RealNetHost` does exactly that, overriding the network calls with live
-kernel state and delegating the rest. The same seam is how a future host
-would reach the Pi's backlight or clock.
+kernel state and delegating the rest. The display backlight crosses the
+same seam: the panel's brightness writes land on a real
+`/sys/class/backlight` device.
 
 Every host call is logged, and that is the project's working loop: when
 the panel asks for something the fixtures don't answer, **the log line
@@ -228,9 +230,9 @@ the fork leaves category 4 alone.
 | idx | native | purpose / return | fixture behavior |
 |-----|--------|------------------|------------------|
 | 5,19 | `_getLCDMute()` | LCD blanked → 0/1 | store (default 0) |
-| 5,20 | `_setLCDMute(state)` | blank/unblank the LCD — night mode uses it | store (planned to drive the real backlight on the Pi) |
+| 5,20 | `_setLCDMute(state)` | LCD on/dim/off (0/1/2) — `setDim` drives it on hw 3.6/3.7 | store; with `brightness_ctl` configured, runs the executable with the level as argument (brightness.rs) |
 | 5,21 | `_getLCDBrightness()` | backlight level 0–65535 | store (default 65536) |
-| 5,22 | `_setLCDBrightness(n)` | set backlight. NB: the panel actually writes `/proc/sys/sense1/brightness` via `_putFile` instead | store |
+| 5,22 | `_setLCDBrightness(n)` | set backlight. NB: the panel actually writes `/proc/sys/sense1/brightness` via `_putFile` instead — that write drives a detected kernel backlight (brightness.rs) | store |
 | 5,23 | `_getBrightnessThresholdForRange(r)` | auto-brightness threshold for a light range | store |
 | 5,24 | `_setBrightnessThresholdForRange(r,n)` | set it | store (first arg only) |
 | 5,200 | `_getScreenWidth()` | framebuffer width — panel hardcodes its 320×240 layout regardless | store |
