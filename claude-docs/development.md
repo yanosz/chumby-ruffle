@@ -214,15 +214,16 @@ The wiki lists the time family under category 103; the SWF binds it at
 5,176–178. The wiki numbers a `PlayAudio` at 5,151; the panel calls
 `_playAudio` at 5,144.
 
-## 4b. Changing the widget channel
+## 4b. Widgets on a dev box
 
-`fixtures/http/xml.chumby.com/xml/profiles` is a static, hand-edited
-fixture: the shipped widgets, each as a `<widget_instance>` (design §3 has
-the schema notes). Adding a shipped widget means its SWF (+ thumbnail) in
-`fixtures/widgets/` and an instance entry here. Anything not shipped merges
-in through a local `profile.xml` instead — no fixture edit involved. (The
-sidecar/generator machinery that used to produce this file was deleted
-2026-07-13.)
+`fixtures/http/xml.chumby.com/xml/profiles` is a static fixture with an
+empty instance list — the panel boots and idles fine without widgets, so
+CI and most dev runs need nothing more. To play widgets on the desktop,
+hand-write a `profile.xml` into `fixtures/rootfs/psp/` (absolute
+`file://` movie hrefs — `_getFile` does **not** expand `{FIXTURES}`); the
+panel merges it at channel load (design §3). `fixtures/widgets/` remains
+the gitignored drop zone for the SWFs themselves. On the appliance the
+same merge is fed by `chumby-local-widgets` (chumby-pi design §4).
 
 ## 5. Verify
 

@@ -125,14 +125,15 @@ the on-device Play All scan proves slow.
 ### The widget channel
 
 Real chumby fetched its channel — a list of widget instances — from
-chumby.com. We ship one as a **static fixture**,
-`fixtures/http/xml.chumby.com/xml/profiles`: the `<widget_instance>`
-envelope around each shipped widget, hand-edited on the rare occasion the
-shipped set changes. The schema the panel accepts is loose (requirements
-FR6); the dashboard preview thumbnail is §6. (Until 2026-07-13 this file
-was generated at boot from per-widget sidecar XML by a `chumby-widget-channel`
-script — machinery deleted in the housekeeping pass once the merge below
-made it redundant.)
+chumby.com. We ship a **static fixture** with a deliberately **empty**
+instance list (`fixtures/http/xml.chumby.com/xml/profiles`): just the
+envelope the panel needs to authorize and start its rotation — it
+tolerates an empty channel (verified 2026-07-13). The schema the panel
+accepts is loose (requirements FR6); the dashboard preview thumbnail is
+§6. (Until 2026-07-13 this file was generated at boot from per-widget
+sidecar XML by a `chumby-widget-channel` script, and briefly carried the
+stock clocks statically — all widgets, clocks included, now arrive via
+the merge below.)
 
 Everything beyond the shipped set rides on the panel's own **local profile
 merge**: after every profile load, `mergeLocalProfile()` (F2:4343) reads the
