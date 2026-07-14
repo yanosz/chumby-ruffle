@@ -299,6 +299,10 @@ impl ActivePlayer {
             }
         });
 
+        // Chumby host environment: wrap the navigator so exec:// and
+        // chumby.com URLs are answered by fixtures.
+        let navigator = ruffle_core::chumby::navigator::ChumbyNavigator::new(navigator);
+
         builder = builder
             .with_navigator(navigator)
             .with_renderer(renderer)

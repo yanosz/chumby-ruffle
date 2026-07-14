@@ -3129,6 +3129,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "md-5"
+version = "0.10.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d89e7ee0cfbedfc4da3340218492196241d89eefb6dab27de5df917a6d2e78cf"
+dependencies = [
+ "cfg-if",
+ "digest",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4706,8 +4716,10 @@ dependencies = [
  "indexmap",
  "itertools 0.14.0",
  "jpegxr",
+ "libc",
  "linkme",
  "lzma-rs",
+ "md-5",
  "naga-agal",
  "nellymoser-rs",
  "num-bigint",
@@ -4732,6 +4744,7 @@ dependencies = [
  "swf 0.2.2",
  "symphonia",
  "thiserror 2.0.18",
+ "toml",
  "tracing",
  "tracy-client",
  "ttf-parser",
