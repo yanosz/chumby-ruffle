@@ -370,7 +370,7 @@ logs and answers defaults (NFR3).
 | `access_chumby_com` | 0 | Opt-in chumby.com traffic. Gates the music proxies (FR15) and — with a stable identity (serial or `device_guid`) — the whole using-chumby.com surface: registration and the account channel (design §12). Off (the default), NFR6 holds unconditionally. |
 | `enable_lyrion` | 0 | Shows the Squeezebox Server source (FR15). The player side is complete; the server side is unverified and out of scope (Jan, 2026-07-11). |
 | `brightness_ctl` | unset | Path to an executable; switches brightness to the discrete radio view and runs the program with the level 0/1/2 as its argument (FR16). Must exist and be executable at load, else warned and ignored. |
-| `merge_local_widgets` | 0 | Only meaningful on a remote-active box (flag + identity). The firmware's `mergeLocalProfile` concatenates `/psp/profile.xml` onto **every** loaded channel; default 0 hides the local profile from the panel there, keeping curated chumby.com channels clean (Jan, 2026-07-13) — local widgets then show only offline. 1 restores the stock ride-along merge (design §3). |
+| `merge_local_remote_widgets` | 0 | Only meaningful on a remote-active box (flag + identity). The firmware's `mergeLocalProfile` concatenates `/psp/profile.xml` onto **every** loaded channel; default 0 hides the local profile from the panel there, keeping curated chumby.com channels clean (Jan, 2026-07-13) — local widgets then show only offline. 1 restores the stock ride-along merge (design §3). |
 
 The committed template is `fixtures/player.toml.example`; the live file is
 gitignored.

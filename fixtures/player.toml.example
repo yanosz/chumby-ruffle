@@ -36,7 +36,7 @@ enable_lyrion = 0
 # including your curated chumby.com channels. Default 0 keeps them out
 # there: local widgets then show only while the box is offline. Set 1 for
 # the stock ride-along merge.
-merge_local_widgets = 0
+merge_local_remote_widgets = 0
 
 # Explicit device GUID (8-4-4-4-12) for a box WITHOUT a hardware serial —
 # a dev box, or non-Pi hardware. A Raspberry Pi derives its GUID from the

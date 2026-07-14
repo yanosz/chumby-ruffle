@@ -153,7 +153,7 @@ The flip side (Jan, 2026-07-13): `gotProfileXML` calls the merge on
 **every** profile load — remote channels included, past the
 MAX_WIDGETS_PER_CHANNEL clamp — so once the box uses chumby.com channels,
 the local set pollutes every curated channel. Since 2026-07-14 the
-default is the opposite: unless `merge_local_widgets = 1` (FR14), a
+default is the opposite: unless `merge_local_remote_widgets = 1` (FR14), a
 remote-active box (the passthrough's flag+identity gate) hides the four
 probe paths from `_fileExists`/`_getFile`/`_fileSize` (`RootFs::hidden`),
 so the merge finds nothing. Offline boxes are untouched — there the local

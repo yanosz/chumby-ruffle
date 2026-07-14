@@ -86,7 +86,7 @@ impl FixtureHost {
             fs: RootFs {
                 root: rootfs_path.clone(),
                 backlight,
-                hide_local_profile: remote_live && !config.merge_local_widgets,
+                hide_local_profile: remote_live && !config.merge_local_remote_widgets,
             },
             exec_manifest,
             slave_vars: Mutex::new(HashMap::new()),
@@ -533,7 +533,7 @@ struct RootFs {
     /// Hide the local profile from the panel: `mergeLocalProfile`
     /// (F2:4342, called from gotProfileXML on every channel load) would
     /// concat it onto every curated account channel. Set when the remote
-    /// surface is live and `merge_local_widgets` is off (config.rs).
+    /// surface is live and `merge_local_remote_widgets` is off (config.rs).
     hide_local_profile: bool,
 }
 
@@ -572,7 +572,7 @@ impl RootFs {
         let hide = self.hide_local_profile && is_local_profile_path(path);
         if hide {
             tracing::debug!(target: "chumby_host",
-                "local profile {path:?} hidden (merge_local_widgets = 0, remote channels live)");
+                "local profile {path:?} hidden (merge_local_remote_widgets = 0, remote channels live)");
         }
         hide
     }
@@ -712,7 +712,7 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
-    /// merge_local_widgets = 0 on a remote-active box hides exactly the
+    /// merge_local_remote_widgets = 0 on a remote-active box hides exactly the
     /// mergeLocalProfile probe paths (F2:4342) from every read; other
     /// rootfs files stay visible, and the flag restores stock behavior.
     #[test]

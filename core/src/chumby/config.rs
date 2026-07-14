@@ -60,7 +60,7 @@ pub struct PlayerConfig {
     /// paths are hidden from the panel (fixture.rs); a 1 restores the
     /// stock ride-along merge. Irrelevant while the box is offline — there
     /// the local profile IS the channel.
-    pub merge_local_widgets: bool,
+    pub merge_local_remote_widgets: bool,
 }
 
 impl Default for PlayerConfig {
@@ -71,7 +71,7 @@ impl Default for PlayerConfig {
             enable_lyrion: false,
             device_guid: None,
             brightness_ctl: None,
-            merge_local_widgets: false,
+            merge_local_remote_widgets: false,
         }
     }
 }
@@ -127,10 +127,10 @@ fn parse(text: &str) -> PlayerConfig {
                 None => tracing::warn!(target: "chumby_host",
                     "player config: enable_lyrion must be 0 or 1, got {value}"),
             },
-            ("merge_local_widgets", v) => match as_flag(v) {
-                Some(b) => config.merge_local_widgets = b,
+            ("merge_local_remote_widgets", v) => match as_flag(v) {
+                Some(b) => config.merge_local_remote_widgets = b,
                 None => tracing::warn!(target: "chumby_host",
-                    "player config: merge_local_widgets must be 0 or 1, got {value}"),
+                    "player config: merge_local_remote_widgets must be 0 or 1, got {value}"),
             },
             ("device_guid", v) => match v.as_str().map(normalize_guid) {
                 Some(Some(g)) => config.device_guid = Some(g),
@@ -205,12 +205,12 @@ mod tests {
     #[test]
     fn test_parse_values() {
         let config =
-            parse("volume_cap = 70\naccess_chumby_com = 1\nenable_lyrion = 1\nmerge_local_widgets = 1\n");
+            parse("volume_cap = 70\naccess_chumby_com = 1\nenable_lyrion = 1\nmerge_local_remote_widgets = 1\n");
         assert_eq!(config.volume_cap, 70.0);
         assert!(config.access_chumby_com);
         assert!(config.enable_lyrion);
-        assert!(config.merge_local_widgets);
-        assert!(!parse("").merge_local_widgets, "stock merge must be opt-in");
+        assert!(config.merge_local_remote_widgets);
+        assert!(!parse("").merge_local_remote_widgets, "stock merge must be opt-in");
         // Floats and TOML booleans are accepted too.
         let config = parse("volume_cap = 55.5\naccess_chumby_com = false\n");
         assert_eq!(config.volume_cap, 55.5);
