@@ -139,6 +139,18 @@ pub struct Opt {
     #[clap(long, default_value_os_t=get_default_cache_directory())]
     pub cache_directory: std::path::PathBuf,
 
+    /// Chumby fixtures directory (chumby-pi project). Enables the
+    /// chumby host environment, answering ASnative/exec/HTTP/file requests
+    /// from this directory.
+    #[clap(long)]
+    pub chumby_fixtures: Option<std::path::PathBuf>,
+
+    /// FIFO for simulated chumby inputs. Line commands, e.g.
+    /// `echo bend > PATH` presses+releases the bend sensor. Ruffle's
+    /// stdin accepts the same commands regardless.
+    #[clap(long)]
+    pub chumby_control: Option<std::path::PathBuf>,
+
     /// Proxy to use when loading movies via URL.
     #[clap(long)]
     pub proxy: Option<Url>,
