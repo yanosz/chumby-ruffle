@@ -78,8 +78,16 @@ impl FixtureHost {
             Backlight::detect()
         };
 
+        // Same gate as the passthrough/ui-policy: remote channels are live
+        // only with the owner flag AND a stable identity.
+        let remote_live =
+            config.access_chumby_com && crate::chumby::real_ident::has_wire_identity(&config);
         Self {
-            fs: RootFs { root: rootfs_path.clone(), backlight },
+            fs: RootFs {
+                root: rootfs_path.clone(),
+                backlight,
+                hide_local_profile: remote_live && !config.merge_local_widgets,
+            },
             exec_manifest,
             slave_vars: Mutex::new(HashMap::new()),
             native_state: Mutex::new(initial_state),
@@ -522,6 +530,26 @@ struct RootFs {
     /// Real display behind the panel's `/proc/sys/sense1/brightness` writes
     /// (0–65535, F2:9119); the write still lands in the rootfs mirror.
     backlight: Option<Backlight>,
+    /// Hide the local profile from the panel: `mergeLocalProfile`
+    /// (F2:4342, called from gotProfileXML on every channel load) would
+    /// concat it onto every curated account channel. Set when the remote
+    /// surface is live and `merge_local_widgets` is off (config.rs).
+    hide_local_profile: bool,
+}
+
+/// `mergeLocalProfile`'s MultipathFile probe list, exactly (F2:4342).
+fn is_local_profile_path(path: &str) -> bool {
+    let clean: Vec<&str> = path
+        .split('/')
+        .filter(|c| !c.is_empty() && *c != ".")
+        .collect();
+    matches!(
+        clean.as_slice(),
+        ["tmp", "profile.xml"]
+            | ["mnt", "usb", "profile.xml"]
+            | ["mnt", "storage", "profile.xml"]
+            | ["psp", "profile.xml"]
+    )
 }
 
 impl RootFs {
@@ -539,10 +567,22 @@ impl RootFs {
         p.extend(&clean);
         Some(p)
     }
+
+    fn hidden(&self, path: &str) -> bool {
+        let hide = self.hide_local_profile && is_local_profile_path(path);
+        if hide {
+            tracing::debug!(target: "chumby_host",
+                "local profile {path:?} hidden (merge_local_widgets = 0, remote channels live)");
+        }
+        hide
+    }
 }
 
 impl ChumbyFs for RootFs {
     fn get_file(&self, path: &str) -> Option<Vec<u8>> {
+        if self.hidden(path) {
+            return None;
+        }
         std::fs::read(self.resolve(path)?).ok()
     }
 
@@ -568,10 +608,13 @@ impl ChumbyFs for RootFs {
     }
 
     fn file_exists(&self, path: &str) -> bool {
-        self.resolve(path).is_some_and(|p| p.exists())
+        !self.hidden(path) && self.resolve(path).is_some_and(|p| p.exists())
     }
 
     fn file_size(&self, path: &str) -> Option<u64> {
+        if self.hidden(path) {
+            return None;
+        }
         std::fs::metadata(self.resolve(path)?).ok().map(|m| m.len())
     }
 
@@ -635,7 +678,7 @@ mod tests {
         std::fs::write(usb.join("b.ogg"), b"x").unwrap();
         std::os::unix::fs::symlink(usb.join("Album"), usb.join("loop")).unwrap();
 
-        let fs = RootFs { root: root.clone(), backlight: None };
+        let fs = RootFs { root: root.clone(), backlight: None, hide_local_profile: false };
 
         // Sorted by name (byte order): Album, a.mp3, b.ogg, loop —
         // and the messy panel path form resolves.
@@ -669,6 +712,30 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
+    /// merge_local_widgets = 0 on a remote-active box hides exactly the
+    /// mergeLocalProfile probe paths (F2:4342) from every read; other
+    /// rootfs files stay visible, and the flag restores stock behavior.
+    #[test]
+    fn test_local_profile_hidden_when_remote_live() {
+        let root = std::env::temp_dir().join(format!("chumby-lp-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("psp")).unwrap();
+        std::fs::write(root.join("psp/profile.xml"), b"<profile/>").unwrap();
+        std::fs::write(root.join("psp/volume"), b"42").unwrap();
+
+        let hidden = RootFs { root: root.clone(), backlight: None, hide_local_profile: true };
+        assert!(!hidden.file_exists("/psp/profile.xml"));
+        assert!(!hidden.file_exists("//psp//profile.xml")); // messy panel paths
+        assert!(hidden.get_file("/psp/profile.xml").is_none());
+        assert!(hidden.file_size("/psp/profile.xml").is_none());
+        assert!(hidden.file_exists("/psp/volume"), "only the probe list is hidden");
+
+        let visible = RootFs { root: root.clone(), backlight: None, hide_local_profile: false };
+        assert!(visible.file_exists("/psp/profile.xml"));
+        assert!(visible.get_file("/psp/profile.xml").is_some());
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
     /// The panel's slider-mode brightness write (`_putFile` to
     /// /proc/sys/sense1/brightness, 0–65535, F2:9119) must reach the real
     /// backlight scaled to its own max, while still landing in the rootfs
@@ -686,6 +753,7 @@ mod tests {
         let fs = RootFs {
             root: root.join("rootfs"),
             backlight: Backlight::detect_in(&class),
+            hide_local_profile: false,
         };
         // Panel 50%: setDim writes int(50 × 655.35).
         fs.put_file("//proc/sys/sense1/brightness", b"32767").unwrap();
