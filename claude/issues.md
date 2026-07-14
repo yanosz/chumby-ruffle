@@ -1,6 +1,6 @@
 # Open issues
 
-One block per issue. Deleted when closed — git remembers.
+One block per issue: Number, Timestamp, Title, Status, Description.
 
 ---
 
