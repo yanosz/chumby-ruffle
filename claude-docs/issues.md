@@ -21,13 +21,19 @@ same device; only the upstream base differs.
 | `7f62f5dbf` (base of `chumby-old`) | 2026-07-06 | responsive |
 | `8328af42d` (base of `chumby`) | 2026-07-12 | too slow to use |
 
-**This is probably not an upstream regression, and must not be reported as
-one.** We render with **llvmpipe** — software rasterisation through Vulkan —
-pinned to a single thread (`LP_NUM_THREADS=1`, set in `chumby-player-run` to
-halve CPU), onto a slow SPI TFT. That is a deliberately marginal configuration.
-At the edge of the envelope, *any* slightly heavier binary tips over: worse
-inlining under LTO, a bigger text section, more instruction-cache pressure.
-Upstream owes us nothing here.
+**Do not report this upstream as a regression.** We render with **llvmpipe** —
+software rasterisation through Vulkan — pinned to a single thread
+(`LP_NUM_THREADS=1`, set in `chumby-player-run` to halve CPU), onto a slow SPI
+TFT. That is a deliberately marginal configuration. At the edge of the
+envelope, *any* slightly heavier binary tips over: worse inlining under LTO, a
+bigger text section, more instruction-cache pressure. "Our AI-assisted fork of
+a 2006 appliance can't keep up under software rendering on one core" is not a
+defect anyone else can act on.
+
+That said, **a genuine upstream slowdown of unknown degree may still be in
+there.** We cannot quantify it — we have no frame-time instrumentation, and
+the only instrument we do have (a human judging a keyboard) saturates. So the
+honest position is: not attributable, not dismissed.
 
 The commit archaeology supports that reading. Across the 59 commits in
 `7f62f5dbf..8328af42d` **nothing touches the renderer or AVM1 rendering**:
@@ -52,6 +58,13 @@ identical command and swap that in before trusting the table above.
 **Mitigation in hand.** `chumby`'s two commits replay onto `7f62f5dbf` with no
 conflicts and no source edits, giving a player that renders the keyboard
 acceptably. Pinning there buys time; it does not buy headroom.
+
+**Watch (this is why the issue stays open).** On every upstream rebase, retype
+in the SHOUTcast search before concluding the bump is good. If a later upstream
+renders the keyboard acceptably again, that is evidence the cost was upstream's
+and transient; if it keeps degrading, it is ours and structural. Record each
+observation in the table above — over a few bumps the table becomes the
+measurement we currently lack.
 
 **The real fix is headroom, not archaeology.** Candidate levers, cheapest first:
 
