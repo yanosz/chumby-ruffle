@@ -53,6 +53,14 @@ pub struct PlayerConfig {
     /// brightness screen on that value (DS1748) and drives `_setLCDMute`.
     /// Must exist and be executable at load, else warned and ignored.
     pub brightness_ctl: Option<PathBuf>,
+    /// The panel's `mergeLocalProfile` concatenates a local profile.xml
+    /// onto EVERY channel it loads — stock firmware behavior that pollutes
+    /// curated account channels once remote channels are live (Jan,
+    /// 2026-07-13). Default off: on a remote-active box the local profile
+    /// paths are hidden from the panel (fixture.rs); a 1 restores the
+    /// stock ride-along merge. Irrelevant while the box is offline — there
+    /// the local profile IS the channel.
+    pub merge_local_remote_widgets: bool,
 }
 
 impl Default for PlayerConfig {
@@ -63,6 +71,7 @@ impl Default for PlayerConfig {
             enable_lyrion: false,
             device_guid: None,
             brightness_ctl: None,
+            merge_local_remote_widgets: false,
         }
     }
 }
@@ -117,6 +126,11 @@ fn parse(text: &str) -> PlayerConfig {
                 Some(b) => config.enable_lyrion = b,
                 None => tracing::warn!(target: "chumby_host",
                     "player config: enable_lyrion must be 0 or 1, got {value}"),
+            },
+            ("merge_local_remote_widgets", v) => match as_flag(v) {
+                Some(b) => config.merge_local_remote_widgets = b,
+                None => tracing::warn!(target: "chumby_host",
+                    "player config: merge_local_remote_widgets must be 0 or 1, got {value}"),
             },
             ("device_guid", v) => match v.as_str().map(normalize_guid) {
                 Some(Some(g)) => config.device_guid = Some(g),
@@ -190,10 +204,13 @@ mod tests {
 
     #[test]
     fn test_parse_values() {
-        let config = parse("volume_cap = 70\naccess_chumby_com = 1\nenable_lyrion = 1\n");
+        let config =
+            parse("volume_cap = 70\naccess_chumby_com = 1\nenable_lyrion = 1\nmerge_local_remote_widgets = 1\n");
         assert_eq!(config.volume_cap, 70.0);
         assert!(config.access_chumby_com);
         assert!(config.enable_lyrion);
+        assert!(config.merge_local_remote_widgets);
+        assert!(!parse("").merge_local_remote_widgets, "stock merge must be opt-in");
         // Floats and TOML booleans are accepted too.
         let config = parse("volume_cap = 55.5\naccess_chumby_com = false\n");
         assert_eq!(config.volume_cap, 55.5);

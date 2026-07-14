@@ -367,9 +367,10 @@ logs and answers defaults (NFR3).
 | key | default | meaning |
 |-----|---------|---------|
 | `volume_cap` | 100 | Percent. **A scale, not a clamp** (Jan, 2026-07-11): the panel's 100 % maps to the cap, proportionally below. Panel space stays honest 0–100 everywhere the panel reads it back (`/psp/volume`, `_getSystemVolume`); only what reaches the audio backend is scaled. The backup-alarm Klaxon (FR13) deliberately ignores the cap — it keeps its own `/psp/backup_alarm_volume` knob at full range (Jan, 2026-07-11). |
-| `access_chumby_com` | 0 | Opt-in chumby.com traffic. Today it gates exactly the music proxies (FR15): the SHOUTcast / blue octy radio / Sleep Sounds sources appear and their hosts pass through. Off (the default), NFR6 holds unconditionally. The remote-channels milestone will widen it. |
+| `access_chumby_com` | 0 | Opt-in chumby.com traffic. Gates the music proxies (FR15) and — with a stable identity (serial or `device_guid`) — the whole using-chumby.com surface: registration and the account channel (design §12). Off (the default), NFR6 holds unconditionally. |
 | `enable_lyrion` | 0 | Shows the Squeezebox Server source (FR15). The player side is complete; the server side is unverified and out of scope (Jan, 2026-07-11). |
 | `brightness_ctl` | unset | Path to an executable; switches brightness to the discrete radio view and runs the program with the level 0/1/2 as its argument (FR16). Must exist and be executable at load, else warned and ignored. |
+| `merge_local_remote_widgets` | 0 | Only meaningful on a remote-active box (flag + identity). The firmware's `mergeLocalProfile` concatenates `/psp/profile.xml` onto **every** loaded channel; default 0 hides the local profile from the panel there, keeping curated chumby.com channels clean (Jan, 2026-07-13) — local widgets then show only offline. 1 restores the stock ride-along merge (design §3). |
 
 The committed template is `fixtures/player.toml.example`; the live file is
 gitignored.

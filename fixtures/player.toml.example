@@ -30,6 +30,14 @@ enable_lyrion = 0
 # 2 = off). Must exist and be executable, or it is ignored.
 # brightness_ctl = "/usr/local/bin/backlight"
 
+# 0/1. Only meaningful on a box using chumby.com channels (registered,
+# access_chumby_com = 1). The original firmware merges the local widgets
+# (/psp/profile.xml, written by chumby-local-widgets) into EVERY channel —
+# including your curated chumby.com channels. Default 0 keeps them out
+# there: local widgets then show only while the box is offline. Set 1 for
+# the stock ride-along merge.
+merge_local_remote_widgets = 0
+
 # Explicit device GUID (8-4-4-4-12) for a box WITHOUT a hardware serial —
 # a dev box, or non-Pi hardware. A Raspberry Pi derives its GUID from the
 # SoC serial and needs nothing here. When set, this becomes the identity
