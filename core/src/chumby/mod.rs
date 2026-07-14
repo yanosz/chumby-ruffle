@@ -28,6 +28,7 @@ pub mod avm;
 pub mod backup_alarm;
 pub mod brightness;
 pub mod config;
+pub mod empty_channel;
 pub mod fixture;
 pub mod host;
 pub mod input;

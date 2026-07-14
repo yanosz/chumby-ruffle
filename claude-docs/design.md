@@ -357,6 +357,18 @@ The dashboard preview picture is compatible with this: it is a *static*
 thumbnail, `loadMovie`'d from a `<thumbnail href>` in the profile, not a
 second live render. `loadMovie` decodes a JPEG as readily as a SWF.
 
+An empty rotation is the one state this path never covered (FR17):
+`chumby/empty_channel.rs` wraps `WidgetPlayer.prototype.fetchWidgetInstanceXML`
+(one-shot surgery, same precedent as `playIntro`), parking the original
+under `__chumby_fetchWidgetInstanceXML`. Zero instances → `beAClock()`
+(F2:5322) and its embedded `bi_clock`; anything else → the original,
+arguments passed through. The wrapper reads `g_widgetInstances.length`
+rather than `g_widgetCount` because the "bad profile" path (F2:4440) leaves
+the array undefined with the count stale — undefined is treated as empty,
+which turns that dead end into a clock too. In clock mode the B2 preview
+window shows no thumbnail (black); stock behaves the same, there is no
+thumbnail to show.
+
 ## 7. Real network diagnostics
 
 `signal_strength` drives the dashboard's only network element, a five-bar

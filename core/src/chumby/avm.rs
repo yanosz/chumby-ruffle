@@ -80,6 +80,8 @@ pub fn method<'gc>(
     super::music_sources::apply(activation);
     // One-shot: replace playIntro so the INTRO button works under localCache.
     super::intro::apply(activation);
+    // One-shot: an empty widget channel shows the built-in clock, not black.
+    super::empty_channel::apply(activation);
 
     let result = dispatch(activation, index, name, args, &host_args)?;
 

@@ -246,6 +246,20 @@ line. Audio-device failure on a headless machine is expected and non-fatal.
 that renders disabled but still fires, or a widget that loads but never
 paints.
 
+**Empty channel → clock** (FR17, desktop, verified 2026-07-14): with no
+`psp/profile.xml` in the fixtures the panel entered clock mode (`bi_clock`
+rendering date + local time) instead of the former black widget area; with a
+one-widget local profile the wrapper took the original path (widget played,
+no clock-mode line in the log); from clock mode the bend menu, Music (My
+Streams / My Music Files), Settings and Alarms all opened normally. The
+boot-time "screen present but control missing" ui-policy warnings are a
+startup transient (buttons attach after the screen sprite) — the rules apply
+correctly once the Settings screen shows, confirmed by pick-trace-inert
+clicks; the same transient also fires on the 2.8.75 panel from the 1.7.3
+`update.zip`, which otherwise passes the movie-start check but misses the
+`content.chumby.com/music_sources` fixture (why 2.8.87b3 stays the shipped
+panel; appliance downloader).
+
 **USB music** (desktop, verified 2026-07-11): Music → My Music Files opens
 the `/mnt/usb` browser over the fixture tones (`fixtures/README.md`).
 Exercised end-to-end: browse, descend into `album/`, back, breadcrumb

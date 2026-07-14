@@ -447,6 +447,23 @@ Writing the sysfs file needs permission (root-owned 0644); granting the
 kiosk user access (udev rule) is the appliance's job, and the player warns
 once and continues if writes fail.
 
+### FR17 — An empty channel is a clock
+
+The panel never plans for a channel with zero widgets: with an empty
+`g_widgetInstances`, `fetchWidgetInstanceXML` (F2:4581) indexes nothing and
+the widget area stays black (observed on the vanilla fixture set,
+2026-07-14). Real hardware effectively never hit this — an unregistered box
+takes the unauthorized path into `beAClock()` (F2:5322) — but our fixtures
+always authorize, so the fresh-install state (no widgets copied yet) was the
+black case. `chumby/empty_channel.rs` wraps the prototype method: a
+zero-instance fetch enters `beAClock()`, whose localCache branch attaches
+`bi_clock` — the clock embedded in the panel itself (the external
+`/usr/widgets/builtinclock.swf` belongs to the slave path only). Any
+non-empty rotation takes the parked original unchanged, so widgets arriving
+via a later profile load leave clock mode through `nextWidget` as on stock.
+Verified 2026-07-14 (development.md §5): clock mode keeps the whole overlay
+alive — B2, Music (incl. My Music Files), Settings, Alarms.
+
 ---
 
 ## 2. Non-functional requirements
