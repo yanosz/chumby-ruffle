@@ -262,7 +262,15 @@ impl MainWindow {
 
                 // chumby: the Home key plays the bend sensor (squeeze
                 // button); chumby's own falconwing port used the same key.
+                // Level alone is not enough: the panel polls _bent once
+                // per frame (~83 ms), and a crisp tap on a GPIO button is
+                // shorter — press and release can both fall between two
+                // polls and vanish. Latch a tap on the press edge too;
+                // the level still carries hold semantics.
                 if event.logical_key == Key::Named(NamedKey::Home) {
+                    if event.state == ElementState::Pressed && !event.repeat {
+                        ruffle_core::chumby::host::tap_bend();
+                    }
                     ruffle_core::chumby::set_bent(event.state == ElementState::Pressed);
                 }
 

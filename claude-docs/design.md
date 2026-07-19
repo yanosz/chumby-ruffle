@@ -481,6 +481,16 @@ not a pointer. The `WindowEvent::Touch` arm synthesizes MouseMove/Down/Up
 from single-touch, and a stationary hold (≤12 px for ≥1 s) raises the bend
 sensor.
 
+The Home key (the bend stand-in, and — via a `gpio-key` overlay emitting
+KEY_HOME — the path for a physical bend button on the Pi) latches
+`tap_bend()` on its press edge in addition to the `set_bent()` level.
+Level alone loses crisp taps: the panel polls `_bent` once per frame
+(~83 ms), and a sub-poll press+release falls between two polls entirely —
+found 2026-07-19 with a GPIO5 button that fired "sometimes, or seconds
+late" (the latter was the user re-pressing until a poll caught one). The
+tap latch is consumed by exactly one poll, so every press yields at least
+one onBend/onUnbend pair; a held key still reads as held.
+
 The control FIFO drains at the top of `about_to_wait`, one action per loop
 iteration, converting `click`/`drag` commands into real `PlayerEvent`s
 through the same `window_to_movie_position` as physical input. Spreading the
