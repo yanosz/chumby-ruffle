@@ -55,6 +55,7 @@ pub struct SpikeStats {
     pub alpha_masks: u32,
     pub blends: u32,
     pub offscreen: u32,
+    pub bitmap_fills: u32,
 }
 
 pub struct TinySkiaRenderBackend {
@@ -328,9 +329,6 @@ fn gradient_stops(gradient: &Gradient, ctx: &ColorTransform) -> Vec<GradientStop
         .collect()
 }
 
-/// A `swf::Matrix` (Fixed16 scale/skew, twips translation) as a tiny-skia
-/// transform, kept in twips. Used as a gradient's baked local matrix; the
-/// twips-to-pixel scale is applied by the fill transform at paint time.
 /// `draw_rect` / `draw_line` / `draw_line_rect` supply a *unit* square or line,
 /// and `Matrix::create_box` puts the size in the linear part **in pixels** while
 /// the translation stays in twips. Only the translation may be converted here —
@@ -348,6 +346,9 @@ fn sk_transform_unit(matrix: &Matrix) -> SkTransform {
     )
 }
 
+/// A `swf::Matrix` (Fixed16 scale/skew, twips translation) as a tiny-skia
+/// transform, kept in twips. A gradient's or bitmap fill's baked local matrix;
+/// the twips-to-pixel scale is applied by the fill transform at paint time.
 fn sk_transform_swf(matrix: &swf::Matrix) -> SkTransform {
     SkTransform::from_row(
         matrix.a.to_f32(),
@@ -760,6 +761,7 @@ impl CommandHandler for TinySkiaRenderBackend {
         let ctx = transform.color_transform;
         let identity = ctx == ColorTransform::IDENTITY;
         let clip = self.masks.clip();
+        let stats = &mut self.stats;
         let mut pixmap = self.frame.as_mut();
         for draw in &sk.0 {
             match draw {
@@ -780,6 +782,7 @@ impl CommandHandler for TinySkiaRenderBackend {
                         let _ = pixmap.fill_path(path, paint, *rule, matrix, clip);
                     }
                     SkPaint::Bitmap(fill) => {
+                        stats.bitmap_fills += 1;
                         let bitmap = as_sk_bitmap(&fill.handle).pixmap.borrow();
                         let paint = bitmap_paint(fill, bitmap.as_ref(), &ctx);
                         let _ = pixmap.fill_path(path, &paint, *rule, matrix, clip);

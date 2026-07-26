@@ -423,6 +423,18 @@ SPI-row-banding and conffile-`--force-confold` traps.
 Not done, deliberately: the version bump and release. The repo builds 0.9.1
 while the boxes carried 0.9.2, so the deb installed for testing was a downgrade.
 
+#### The grey boxes behind the buttons (2026-07-26, closed)
+
+Jan, looking at the device: "in the control-panel, all buttons have square boxes
+that look ugly". Not a live defect — the box was running the deb built at step 4,
+which predates 5b. The control panel's screen submits **7 bitmap-filled shapes
+per frame** (a counter now in `SpikeStats` says so), and before bitmap fills
+those painted flat grey 0x808080 — a grey square behind every button. Worth
+noting the trap: `stats.bitmaps` counts `render_bitmap` only and reads 0 on that
+screen, so the earlier "the panel needs no bitmaps" conclusion was about the
+wrong call. Redeployed and verified on the panel over the control FIFO
+(`echo bend > /tmp/chumby-ctl`, then `grim`): clean circles with soft shadows.
+
 ## Plan complete
 
 All six steps and 5a–5c are done and the backend ships as the appliance default
