@@ -411,6 +411,33 @@ and what the win means for the `LP_NUM_THREADS` / `CHUMBY_QUALITY` defaults —
 if lavapipe is no longer in the frame on the appliance, both may become dead
 knobs there.
 
+#### Step 6 results (2026-07-26, DONE)
+
+Fork: this document. Appliance (chumby-pi): NFR4 rewritten — lavapipe is no
+longer the only path, and `LP_NUM_THREADS`/`CHUMBY_QUALITY` are documented as
+wgpu-only levers rather than the appliance's rendering defaults; `development.md`
+§6 carries the A/B table and the finding that the panel, not the renderer, caps
+the frame rate; §7 gained the cage-needs-a-VT, `ondemand`-at-low-load,
+SPI-row-banding and conffile-`--force-confold` traps.
+
+Not done, deliberately: the version bump and release. The repo builds 0.9.1
+while the boxes carried 0.9.2, so the deb installed for testing was a downgrade.
+
+## Plan complete
+
+All six steps and 5a–5c are done and the backend ships as the appliance default
+(`CHUMBY_RENDERER=tiny-skia`). What the renderer no longer bounds, the display
+now does: the panel draws at 37 % of one core and still shows ~6–7 fps, so
+choosing a display *is* choosing a frame rate. That is chumby-pi
+`claude/issues.md` #4 — 3.5", 4:3, hardware brightness, 12 fps — and it is the
+next piece of work, not a player task.
+
+Left open here: `render_alpha_mask` still draws its maskee unclipped (the panel
+emits none), RGB tinting of bitmaps and bitmap fills (tiny-skia patterns carry
+only an opacity), and filters, PixelBender, Context3D and `render_offscreen`,
+which the panel never asks for. The 640×480 HDMI box was offline all day and
+remains unmeasured — that measurement now belongs to issue #4.
+
 ## Risks
 
 - **CPU present under cage** — wlroots supports `wl_shm`, but this is the one
