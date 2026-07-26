@@ -229,16 +229,21 @@ impl GuiController {    pub fn new(
         );
     }
 
-    pub fn height_offset(&self) -> f64 {
-        // The software path draws no menu bar at all.
+    /// Logical height of the menu bar; zero when there is none to draw — the
+    /// software path has no GUI at all.
+    pub fn menu_height(&self) -> f64 {
         if matches!(self.present, Present::Software(_))
             || self.window.fullscreen().is_some()
             || self.no_gui
         {
             0.0
         } else {
-            MENU_HEIGHT as f64 * self.window.scale_factor()
+            MENU_HEIGHT as f64
         }
+    }
+
+    pub fn height_offset(&self) -> f64 {
+        self.menu_height() * self.window.scale_factor()
     }
 
     pub fn window_to_movie_position(&self, position: PhysicalPosition<f64>) -> (f64, f64) {

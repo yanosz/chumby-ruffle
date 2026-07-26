@@ -221,6 +221,51 @@ not later polish — an on-device A/B against wgpu has nothing meaningful to
 compare until the panel draws correctly. Bitmap fills (5b) remain genuinely
 cosmetic here: the clock screen submits no bitmaps at all.
 
+### Step 5a — Masks, promoted ahead of steps 3–4 (2026-07-26, DONE)
+
+**Jan, 2026-07-26:** masks first, then the device — an A/B on a knowingly wrong
+picture cannot be judged.
+
+Real clipping now: a `MaskStack` of levels, each `Building` (geometry submitted
+now *defines* this mask) or `Active` (it clips every draw), rasterising into
+`tiny_skia::Mask` and passed as the clip argument of every `fill_path`,
+`stroke_path` and `draw_pixmap`. Nested masks intersect with the enclosing one
+(tiny-skia can intersect a mask with a *path* but not with another mask, so that
+multiply is ours). Retired masks are pooled — a mask is `w*h` bytes and the panel
+builds four per frame.
+
+Two bugs, one of them older than this step:
+
+- **A mask can be pushed and popped without ever being activated.** The first
+  cut tracked a single depth counter and popped an *active* clip on every
+  `pop_mask`, so an unactivated mask tore down the enclosing clip. Hence
+  per-level state rather than a counter.
+- **`draw_rect`/`draw_line`/`draw_line_rect` were 20× too small — a spike bug,
+  not a mask bug.** They scale a *unit* square, and `Matrix::create_box` (core's
+  `create_box_from_rectangle`) supplies the size in the linear part **in pixels**
+  while the translation stays in twips. The spike scaled all six components by
+  `TWIPS_TO_PIXELS`, as twips-space shape paths require. Invisible until masks
+  worked: a text field with a `scrollRect` is masked exactly this way, so the
+  masks for "July" and "p.m." collapsed to 9×2 px and 30×6 px slivers and clipped
+  the text away entirely. Fixed with `sk_transform_unit`, which converts only the
+  translation.
+
+Finding them took measurement, not reading: dumping the player's own pixmap
+proved the frontend copy was faithful, per-mask coverage logging showed masks of
+18, 210 and 0 covered pixels, and dumping the masks as PNGs put the "July" mask
+at (24,0)–(32,1) — 20× short of the text field it should have covered.
+
+**Verified on the desktop against wgpu, same window geometry, same minute:** the
+clock screen now matches — identical bounding boxes for the white text
+(24,0)–(604,466) and the navy digits (158,132)–(536,372), and **99.7 % of pixels
+within 16 levels**. 16 tests pass, three of them new: the unit-geometry scale,
+the pop-without-activate case, and the state machine.
+
+Still open by design: bitmap fills (5b) and focal gradients (5c) — the clock
+screen submits neither; `render_alpha_mask` still draws its maskee unclipped
+(the panel emits none); filters, PixelBender, Context3D and `render_offscreen`
+stay unimplemented, which step 2's instrumentation showed the panel never needs.
+
 ### Step 3 — Live panel on the desktop, then the resolution lever
 
 Run the real `controlpanel.swf` fullscreen with `--renderer tiny-skia`: touch

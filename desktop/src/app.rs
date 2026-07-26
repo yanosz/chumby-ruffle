@@ -327,11 +327,7 @@ impl MainWindow {
     }
 
     fn on_metadata(&mut self, swf_header: HeaderExt) {
-        let height_offset = if self.gui.window().fullscreen().is_some() || self.no_gui {
-            0.0
-        } else {
-            MENU_HEIGHT as f64
-        };
+        let height_offset = self.gui.menu_height();
 
         // To prevent issues like waiting on resize indefinitely (#11364) or desyncing the window state on Windows,
         // do not resize while window is maximized.

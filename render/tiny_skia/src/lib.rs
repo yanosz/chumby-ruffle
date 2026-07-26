@@ -33,7 +33,7 @@ use ruffle_render::shape_utils::{DistilledShape, DrawCommand, DrawPath, FillRule
 use swf::{Color, ColorTransform, FillStyle, Gradient, GradientSpread};
 use tiny_skia::{
     FillRule as SkFillRule, FilterQuality, GradientStop, IntSize, LinearGradient, Paint, Path,
-    PathBuilder, Pixmap, PixmapPaint, Point, RadialGradient, Shader, SpreadMode, Stroke,
+    Mask, PathBuilder, Pixmap, PixmapPaint, Point, RadialGradient, Shader, SpreadMode, Stroke,
     Transform as SkTransform,
 };
 
@@ -59,13 +59,7 @@ pub struct SpikeStats {
 pub struct TinySkiaRenderBackend {
     pub stats: SpikeStats,
     frame: Pixmap,
-    /// Non-zero while the command stream is submitting *mask* geometry rather
-    /// than content. Ruffle brackets a maskee with the mask's own shapes
-    /// (push_mask..activate_mask, then deactivate_mask..pop_mask, which is
-    /// where wgpu builds and clears its stencil). Drawing those shapes paints
-    /// the mask's fill over the picture, so until real clipping exists they
-    /// are dropped instead.
-    mask_depth: u32,
+    masks: MaskStack,
     dimensions: ViewportDimensions,
 }
 
@@ -75,7 +69,7 @@ impl TinySkiaRenderBackend {
         Self {
             stats: SpikeStats::default(),
             frame,
-            mask_depth: 0,
+            masks: MaskStack::default(),
             dimensions: ViewportDimensions {
                 width: width.max(1),
                 height: height.max(1),
@@ -87,6 +81,114 @@ impl TinySkiaRenderBackend {
     /// The rendered frame, for a harness to read back (the trait has no present).
     pub fn frame(&self) -> &Pixmap {
         &self.frame
+    }
+}
+
+/// Ruffle's mask protocol: `push_mask`, the mask's own geometry,
+/// `activate_mask`, the maskee, `deactivate_mask`, the same geometry once more
+/// (wgpu replays it to clear its stencil), `pop_mask`. A mask can also be
+/// pushed and popped again without ever being activated, so each level carries
+/// its own state rather than sharing one depth counter.
+enum MaskLevel {
+    /// Geometry submitted now *defines* this mask instead of being drawn.
+    Building(Mask),
+    /// This mask clips every draw until it is popped.
+    Active(Mask),
+}
+
+#[derive(Default)]
+struct MaskStack {
+    levels: Vec<MaskLevel>,
+    /// Retired masks, kept to avoid re-allocating ~w*h bytes every frame.
+    spare: Vec<Mask>,
+}
+
+impl MaskStack {
+    fn defining(&self) -> bool {
+        matches!(self.levels.last(), Some(MaskLevel::Building(_)))
+    }
+
+    /// The innermost mask that is actually clipping.
+    fn clip(&self) -> Option<&Mask> {
+        self.levels.iter().rev().find_map(|level| match level {
+            MaskLevel::Active(mask) => Some(mask),
+            MaskLevel::Building(_) => None,
+        })
+    }
+
+    fn target(&mut self) -> Option<&mut Mask> {
+        match self.levels.last_mut() {
+            Some(MaskLevel::Building(mask)) => Some(mask),
+            _ => None,
+        }
+    }
+
+    fn take(&mut self, width: u32, height: u32) -> Option<Mask> {
+        while let Some(mut mask) = self.spare.pop() {
+            if mask.width() == width && mask.height() == height {
+                mask.clear();
+                return Some(mask);
+            }
+        }
+        Mask::new(width, height)
+    }
+
+    fn push(&mut self, width: u32, height: u32) {
+        if let Some(mask) = self.take(width, height) {
+            self.levels.push(MaskLevel::Building(mask));
+        }
+    }
+
+    /// The mask is complete: intersect it with any enclosing clip and apply it.
+    fn activate(&mut self) {
+        if !self.defining() {
+            return;
+        }
+        let Some(MaskLevel::Building(mut mask)) = self.levels.pop() else {
+            return;
+        };
+        if let Some(outer) = self.clip() {
+            intersect(&mut mask, outer);
+        }
+        self.levels.push(MaskLevel::Active(mask));
+    }
+
+    /// The maskee is done; what follows is the mask's geometry again, which
+    /// only wgpu's stencil needs. Collect it somewhere it can be thrown away.
+    fn deactivate(&mut self, width: u32, height: u32) {
+        if matches!(self.levels.last(), Some(MaskLevel::Active(_)))
+            && let Some(MaskLevel::Active(mask)) = self.levels.pop()
+        {
+            self.spare.push(mask);
+        }
+        self.push(width, height);
+    }
+
+    fn pop(&mut self) {
+        if let Some(level) = self.levels.pop() {
+            self.spare.push(match level {
+                MaskLevel::Building(mask) | MaskLevel::Active(mask) => mask,
+            });
+        }
+    }
+
+    /// A frame must not inherit a clip from an unbalanced previous one.
+    fn reset(&mut self) {
+        for level in self.levels.drain(..) {
+            self.spare.push(match level {
+                MaskLevel::Building(mask) | MaskLevel::Active(mask) => mask,
+            });
+        }
+    }
+}
+
+/// tiny-skia can intersect a mask with a *path* but not with another mask.
+fn intersect(mask: &mut Mask, other: &Mask) {
+    if mask.width() != other.width() || mask.height() != other.height() {
+        return;
+    }
+    for (a, b) in mask.data_mut().iter_mut().zip(other.data()) {
+        *a = ((*a as u16 * *b as u16 + 127) / 255) as u8;
     }
 }
 
@@ -187,6 +289,23 @@ fn gradient_stops(gradient: &Gradient, ctx: &ColorTransform) -> Vec<GradientStop
 /// A `swf::Matrix` (Fixed16 scale/skew, twips translation) as a tiny-skia
 /// transform, kept in twips. Used as a gradient's baked local matrix; the
 /// twips-to-pixel scale is applied by the fill transform at paint time.
+/// `draw_rect` / `draw_line` / `draw_line_rect` supply a *unit* square or line,
+/// and `Matrix::create_box` puts the size in the linear part **in pixels** while
+/// the translation stays in twips. Only the translation may be converted here —
+/// scaling the whole matrix (as shape paths, which are in twips, require) shrinks
+/// these by 20x. Text fields with a `scrollRect` are masked this way, so the bug
+/// hid a mask down to a few pixels and clipped the text away entirely.
+fn sk_transform_unit(matrix: &Matrix) -> SkTransform {
+    SkTransform::from_row(
+        matrix.a,
+        matrix.b,
+        matrix.c,
+        matrix.d,
+        matrix.tx.get() as f32 * TWIPS_TO_PIXELS,
+        matrix.ty.get() as f32 * TWIPS_TO_PIXELS,
+    )
+}
+
 fn sk_transform_swf(matrix: &swf::Matrix) -> SkTransform {
     SkTransform::from_row(
         matrix.a.to_f32(),
@@ -383,6 +502,7 @@ impl RenderBackend for TinySkiaRenderBackend {
         _cache_entries: Vec<BitmapCacheEntry>,
     ) {
         self.frame.fill(sk_color(&clear));
+        self.masks.reset();
         self.stats = SpikeStats::default();
         commands.execute(self);
         if std::env::var_os("CHUMBY_TS_STATS").is_some() {
@@ -491,7 +611,22 @@ impl CommandHandler for TinySkiaRenderBackend {
         _pixel_snapping: PixelSnapping,
     ) {
         self.stats.bitmaps += 1;
-        if self.mask_depth > 0 {
+        if self.masks.defining() {
+            // A bitmap as mask geometry: take its whole rectangle as coverage.
+            let sk = as_sk_bitmap(&bitmap);
+            let (w, h) = {
+                let pixmap = sk.pixmap.borrow();
+                (pixmap.width() as f32, pixmap.height() as f32)
+            };
+            let rect = tiny_skia::Rect::from_xywh(0.0, 0.0, w, h).map(PathBuilder::from_rect);
+            if let (Some(mask), Some(rect)) = (self.masks.target(), rect) {
+                mask.fill_path(
+                    &rect,
+                    SkFillRule::Winding,
+                    true,
+                    sk_transform(&transform.matrix, TWIPS_TO_PIXELS),
+                );
+            }
             return;
         }
         let sk = as_sk_bitmap(&bitmap);
@@ -512,7 +647,7 @@ impl CommandHandler for TinySkiaRenderBackend {
         let _ = self
             .frame
             .as_mut()
-            .draw_pixmap(0, 0, pixmap.as_ref(), &paint, transform, None);
+            .draw_pixmap(0, 0, pixmap.as_ref(), &paint, transform, self.masks.clip());
     }
 
     fn render_stage3d(
@@ -525,15 +660,29 @@ impl CommandHandler for TinySkiaRenderBackend {
 
     fn render_shape(&mut self, shape: ShapeHandle, transform: ruffle_render::transform::Transform) {
         self.stats.shapes += 1;
-        if self.mask_depth > 0 {
-            return;
-        }
         let sk = as_sk_shape(&shape);
         let matrix = sk_transform(&transform.matrix, TWIPS_TO_PIXELS);
+        if self.masks.defining() {
+            // Only the shape's coverage matters for a mask, not its paint.
+            if let Some(mask) = self.masks.target() {
+                for draw in &sk.0 {
+                    match draw {
+                        SkDraw::Fill { path, rule, .. } => {
+                            mask.fill_path(path, *rule, true, matrix)
+                        }
+                        SkDraw::Stroke { path, .. } => {
+                            mask.fill_path(path, SkFillRule::Winding, true, matrix)
+                        }
+                    }
+                }
+            }
+            return;
+        }
         // Cached paints hold the untransformed colours; only rebuild when a
         // real colour transform (tint / alpha fade) is in play.
         let ctx = transform.color_transform;
         let identity = ctx == ColorTransform::IDENTITY;
+        let clip = self.masks.clip();
         let mut pixmap = self.frame.as_mut();
         for draw in &sk.0 {
             match draw {
@@ -550,7 +699,7 @@ impl CommandHandler for TinySkiaRenderBackend {
                         rebuilt = fill_paint(style, &ctx);
                         &rebuilt
                     };
-                    let _ = pixmap.fill_path(path, paint, *rule, matrix, None);
+                    let _ = pixmap.fill_path(path, paint, *rule, matrix, clip);
                 }
                 SkDraw::Stroke {
                     path,
@@ -569,7 +718,7 @@ impl CommandHandler for TinySkiaRenderBackend {
                         rebuilt = fill_paint(style, &ctx);
                         &rebuilt
                     };
-                    let _ = pixmap.stroke_path(path, paint, &stroke, matrix, None);
+                    let _ = pixmap.stroke_path(path, paint, &stroke, matrix, clip);
                 }
             }
         }
@@ -583,24 +732,30 @@ impl CommandHandler for TinySkiaRenderBackend {
 
     fn draw_rect(&mut self, color: Color, matrix: Matrix) {
         self.stats.rects += 1;
-        if self.mask_depth > 0 {
+        let Some(path) = unit_rect() else { return };
+        let transform = sk_transform_unit(&matrix);
+        if self.masks.defining() {
+            if let Some(mask) = self.masks.target() {
+                mask.fill_path(&path, SkFillRule::Winding, true, transform);
+            }
             return;
         }
-        let Some(path) = unit_rect() else { return };
         let paint = Paint {
             shader: Shader::SolidColor(sk_color(&color)),
             anti_alias: true,
             ..Default::default()
         };
-        let transform = sk_transform(&matrix, TWIPS_TO_PIXELS);
-        let _ = self
-            .frame
-            .as_mut()
-            .fill_path(&path, &paint, SkFillRule::Winding, transform, None);
+        let _ = self.frame.as_mut().fill_path(
+            &path,
+            &paint,
+            SkFillRule::Winding,
+            transform,
+            self.masks.clip(),
+        );
     }
 
     fn draw_line(&mut self, color: Color, matrix: Matrix) {
-        if self.mask_depth > 0 {
+        if self.masks.defining() {
             return;
         }
         let mut builder = PathBuilder::new();
@@ -612,15 +767,18 @@ impl CommandHandler for TinySkiaRenderBackend {
             anti_alias: true,
             ..Default::default()
         };
-        let transform = sk_transform(&matrix, TWIPS_TO_PIXELS);
-        let _ = self
-            .frame
-            .as_mut()
-            .stroke_path(&path, &paint, &Stroke::default(), transform, None);
+        let transform = sk_transform_unit(&matrix);
+        let _ = self.frame.as_mut().stroke_path(
+            &path,
+            &paint,
+            &Stroke::default(),
+            transform,
+            self.masks.clip(),
+        );
     }
 
     fn draw_line_rect(&mut self, color: Color, matrix: Matrix) {
-        if self.mask_depth > 0 {
+        if self.masks.defining() {
             return;
         }
         let Some(path) = unit_rect() else { return };
@@ -629,28 +787,33 @@ impl CommandHandler for TinySkiaRenderBackend {
             anti_alias: true,
             ..Default::default()
         };
-        let transform = sk_transform(&matrix, TWIPS_TO_PIXELS);
-        let _ = self
-            .frame
-            .as_mut()
-            .stroke_path(&path, &paint, &Stroke::default(), transform, None);
+        let transform = sk_transform_unit(&matrix);
+        let _ = self.frame.as_mut().stroke_path(
+            &path,
+            &paint,
+            &Stroke::default(),
+            transform,
+            self.masks.clip(),
+        );
     }
 
     fn push_mask(&mut self) {
         self.stats.masks += 1;
-        self.mask_depth += 1;
+        let (width, height) = (self.frame.width(), self.frame.height());
+        self.masks.push(width, height);
     }
 
     fn activate_mask(&mut self) {
-        self.mask_depth = self.mask_depth.saturating_sub(1);
+        self.masks.activate();
     }
 
     fn deactivate_mask(&mut self) {
-        self.mask_depth += 1;
+        let (width, height) = (self.frame.width(), self.frame.height());
+        self.masks.deactivate(width, height);
     }
 
     fn pop_mask(&mut self) {
-        self.mask_depth = self.mask_depth.saturating_sub(1);
+        self.masks.pop();
     }
 
     fn blend(&mut self, commands: CommandList, _blend_mode: RenderBlendMode) {
@@ -664,6 +827,59 @@ impl CommandHandler for TinySkiaRenderBackend {
 mod tests {
     use super::*;
     use swf::{GradientSpread, Twips};
+
+    /// `Matrix::create_box` (core's `create_box_from_rectangle`) carries the
+    /// size in pixels and the position in twips. Scaling the whole matrix, as
+    /// twips-space shape paths need, shrank every `draw_rect` 20x — which on
+    /// the panel reduced a text field's `scrollRect` mask to a few pixels and
+    /// clipped the text away.
+    #[test]
+    fn unit_geometry_keeps_pixel_scale() {
+        let matrix = Matrix::create_box(
+            177.0,
+            132.0,
+            Twips::from_pixels(24.0),
+            Twips::from_pixels(-5.0),
+        );
+        let t = sk_transform_unit(&matrix);
+        assert!(approx(t.sx, 177.0));
+        assert!(approx(t.sy, 132.0));
+        assert!(approx(t.tx, 24.0));
+        assert!(approx(t.ty, -5.0));
+    }
+
+    /// A mask can be pushed and popped again without ever being activated;
+    /// that must not disturb the clip of an enclosing mask.
+    #[test]
+    fn mask_popped_without_activation_keeps_outer_clip() {
+        let mut stack = MaskStack::default();
+        stack.push(4, 4);
+        stack.activate();
+        assert!(stack.clip().is_some());
+
+        stack.push(4, 4);
+        stack.pop();
+        assert!(stack.clip().is_some(), "outer clip must survive");
+
+        stack.pop();
+        assert!(stack.clip().is_none());
+    }
+
+    /// While a mask is being defined, geometry defines it instead of being
+    /// drawn; once activated, drawing resumes and is clipped.
+    #[test]
+    fn mask_states_follow_the_protocol() {
+        let mut stack = MaskStack::default();
+        assert!(!stack.defining());
+        stack.push(4, 4);
+        assert!(stack.defining());
+        stack.activate();
+        assert!(!stack.defining());
+        stack.deactivate(4, 4);
+        assert!(stack.defining(), "the replayed geometry is not content");
+        stack.pop();
+        assert!(!stack.defining());
+    }
 
     fn approx(a: f32, b: f32) -> bool {
         (a - b).abs() < 1e-3
