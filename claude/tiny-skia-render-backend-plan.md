@@ -248,3 +248,14 @@ Vulkan-through-software translation is ~20× cheaper on this hardware and frees 
 core. Building the real `submit_frame` + live-player (cage) integration — and
 then masks/bitmap-fills/color-transform for fidelity — is well justified.
 **Awaiting Jan's decision to proceed past the spike.**
+
+## Spike concluded
+
+**2026-07-26 — Jan: GO.** The hypothesis held (~20× cheaper, single-threaded on
+the Pi), so we proceed past the spike to a real backend. This document is the
+spike's frozen record — do not extend it; the forward work is tracked in its own
+plan (`tiny-skia-backend-plan.md`).
+
+Spike commits on `renderer/tiny-skia-spike`: plan → step 1 (crate) → step 2
+(tests) → step 2b (harness) → colour-transform → step 3 (desktop gate) → step 4
+(on-device, GO).
