@@ -192,3 +192,24 @@ gap and proceed to Step 3 (measurement) — the spike is about CPU load, and
 fidelity is already enough to measure representative work. Masks (and bitmap
 *fills*) are the top fidelity items **only if** the numbers justify turning this
 into a real backend; not worth building on a spike that might not proceed.
+
+### Step 3 — desktop timing + CPU sanity gate (DONE)
+
+`tiny_skia_export` now times `render()` per frame (`out_dir` of `-` = time only,
+no PNGs). Release build, desktop **i3-1315U**, single-threaded:
+
+| Content | Size | mean ms/frame | ≈ fps | CPU |
+|---|---|---|---|---|
+| opening.swf (132 fr) | 320×240 | 0.15–0.17 | ~6500 | 97% of 1 core |
+| controlpanel.swf (100 fr) | 320×240 | ~0.40 | ~2500 | 98% of 1 core |
+| opening.swf (132 fr) | 640×480 | ~0.29 | ~3400 | — |
+
+The panel's real load (37 shapes + 2 masks/frame) rasterises in ~0.4 ms on
+desktop — no pathological slowness; the sanity gate passes decisively. tiny-skia
+is single-threaded, so it pegs one core while busy (expected).
+
+Caveat: desktop x86 ≫ Pi VideoCore-era ARM — these absolute numbers do **not**
+transfer. Their only job is the go/no-go gate. **Verdict: GO to Step 4** — the
+real apples-to-apples comparison is on the 3A+ vs the lavapipe baseline
+(~11–12 fps live; 92 ms/frame offscreen at 320×240). Awaiting Jan's ok to touch
+hardware.
