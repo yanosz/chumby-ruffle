@@ -84,6 +84,73 @@ Deliverable: a number for "what does presenting cost, before any rendering",
 and a decision between A and B.
 **CHECKPOINT 1** — present path confirmed with Jan.
 
+#### Step 1 results (2026-07-26, DONE)
+
+Probe: `render/tiny_skia/examples/present_probe.rs` — winit + softbuffer, no
+Vulkan anywhere. Modes `direct` (paint at window size, copy out), `upscale`
+(paint at the 320×240 stage, scale up via `draw_pixmap`), `zerocopy` (paint
+straight into the `wl_shm` buffer; R/B swapped, so a cost probe only, not a
+usable path). Paced by an explicit sleep, not `ControlFlow::WaitUntil` —
+buffer-completion events cancel the wait and the loop runs flat out.
+
+Box: 3B+ `192.168.42.51`, **480×320 SPI TFT** (`platform-3f204000.spi-cs-0-card`),
+cage with `WLR_RENDERER=pixman` — the compositor composites in software here, so
+its share is CPU work. The 640×480 HDMI box was offline; that half is deferred,
+not dropped. Idle CPU floor measured first: **0.3 % of a core**, so the
+"elsewhere" column is clean. `dist` cross-build, `aarch64-unknown-linux-gnu`.
+
+Because handing over a `wl_shm` buffer is asynchronous, per-frame `present()`
+timing sees almost nothing (~0.07 ms); the probe therefore accounts CPU from
+`/proc` — its own utime+stime versus the whole box's busy time, the difference
+being cage plus kernel.
+
+At **12 fps** (the panel's ceiling), 480×320, clock pinned to 1.4 GHz:
+
+| mode | own CPU ms/frame | whole box ms/frame | elsewhere (cage+kernel) |
+|---|---|---|---|
+| **direct** | 1.17 | **5.75–6.17** | 4.6–5.0 |
+| zerocopy | 0.58 | 5.58 | 5.0 |
+| upscale, nearest † | 11.50 | 17.58 | 6.1 |
+| upscale, bilinear † | 22.75 | 27.50 | 4.8 |
+
+† measured under `ondemand`, which parks at the 600 MHz floor at these loads —
+pessimistic by ~2×, and still an order of magnitude worse than `direct`.
+
+`direct` phase split at pinned clock: paint 0.364 ms, RGBA→X8R8G8B8 copy
+0.567 ms, present 0.074 ms.
+
+**Verdict: path (A) softbuffer, confirmed.** Presenting a full frame costs the
+whole box ~6 ms CPU per frame at 12 fps — **~7 % of one core**, against the
+~166 % (2 lavapipe threads @ 83 %) the shipped wgpu path burns for the same rate.
+Presenting is not where the budget goes, and no Vulkan is initialised at all.
+Option (B) needs no measurement to be rejected.
+
+Three further findings:
+
+- **The upscale lever is dead in this form.** tiny-skia's `draw_pixmap`
+  scaling costs 11 ms/frame (nearest) to 22 ms (bilinear) — ~30× the 0.36 ms of
+  simply painting at panel size. "Render at stage size and upscale" helped
+  lavapipe because *rasterisation* scaled with pixels; here the upscale blit
+  itself dominates. If scene rasterisation at panel size turns out expensive in
+  step 3, the variant worth measuring is a hand-rolled nearest-neighbour
+  replication folded into the copy loop, not `draw_pixmap`.
+- **The copy is affordable.** Removing it entirely (zerocopy) saves 0.58 ms/frame
+  — 0.7 % of a core. Not worth contorting the pixel format for; keep the honest
+  conversion.
+- **Presents are dropped, not queued.** Unthrottled, the probe pushed 957
+  presents/s while the SPI panel can physically show ~12; softbuffer does not
+  block. A frame cap in the player therefore remains a real lever (§6 open
+  levers), since nothing upstream throttles the loop.
+
+Two device facts worth keeping (both now in chumby-pi `claude-docs/development.md`
+§7): **cage cannot start from a plain ssh session** — libseat finds no VT
+(`Could not open target tty`), the DRM backend times out, and the hung cage keeps
+ssh's stdout open so the ssh call itself never returns; run it from a transient
+systemd unit that copies the service's `PAMName=login` + `TTYPath=/dev/tty1`.
+And the SPI panel shows **row-banded motion** (Jan, observing the probe): tinydrm
+shifts a frame out progressively, so during a transfer the top rows already carry
+the new frame. Not a renderer artifact — the wgpu path uses the same transfer.
+
 ### Step 2 — Renderer selection seam
 
 - `--renderer wgpu|tiny-skia` on the player CLI. No silent fallback: an
