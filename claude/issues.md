@@ -22,18 +22,28 @@ keyboard on every future rebase.
 Number: 2
 Timestamp: 2026-07-26, 22:45
 Title: tiny-skia and wgpu render the panel visibly differently.
-Status: open — observed at the screen; both leading hypotheses measured and
-refuted; cause not yet identified
+Status: open, and much narrower — the high-contrast/bright-fringe half of the
+report turned out to be the SPI bus, not this renderer. What remains for the
+player is a single outline; both leading hypotheses for it are measured and
+refuted, cause not yet identified.
 Description: Jan compared the two backends on the 3B+ / ILI9486 SPI TFT and
 reports three distinct looks. This is a fidelity gap the spike's own metric
 missed: it scored 93-98.8 % of pixels within 16 levels and called that good,
 but a one-pixel fringe around every glyph is a tiny fraction of pixels and
 extremely visible.
 
+NOT OURS, resolved 2026-07-26: the "super-high contrast, small bright border
+around every symbol" half of the report was the appliance's SPI overclock, not
+this backend. Holding tiny-skia constant and walking the panel's SPI clock
+(chumby-pi claude/issues.md #4) reproduces the artifacts at 28.6 MHz and above
+and loses them below; at a clean 22.2 MHz the same renderer draws the same
+screen without them. Discount that description when hunting the remaining bug.
+
 Observed (Jan, at the screen):
-- **tiny-skia** — "super-high contrast, with a small bright border around every
-  symbol", plus "some kind of frame / outline on the right hand side of the
-  spaceclock". His words: "a bit like anti-aliasing in the wrong color".
+- **tiny-skia** — "some kind of frame / outline on the right hand side of the
+  spaceclock", which SURVIVES at the clean clock and is therefore ours. It was
+  originally reported together with contrast artifacts since removed from
+  scope; "a bit like anti-aliasing in the wrong color" described that half.
 - **wgpu** (`CHUMBY_QUALITY=low`) — "blurred", the border is gone, the
   spaceclock numbers look "pixel-like": "a bit like no anti-aliasing is
   applied".
