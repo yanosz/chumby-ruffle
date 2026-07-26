@@ -72,12 +72,14 @@ shot() {
 bend() {
     # Bend presses are momentary and silently lost if sent before the SWF
     # restarts its bend polling after a panel closes — so confirm via the
-    # avm_trace log and retry instead of trusting a fixed sleep.
+    # avm_trace log and retry instead of trusting a fixed sleep. The panel
+    # traces "Bend sensor activated"; `pressBendSensor` is kept for whatever
+    # build the original check was written against.
     for _ in 1 2 3; do
-        n=$(grep -c 'pressBendSensor' "$LOG" || true)
+        n=$(grep -cE 'pressBendSensor|Bend sensor activated' "$LOG" || true)
         echo bend > "$CTL"
         sleep 1.2   # give B2 time to animate in
-        m=$(grep -c 'pressBendSensor' "$LOG" || true)
+        m=$(grep -cE 'pressBendSensor|Bend sensor activated' "$LOG" || true)
         [ "$m" -gt "$n" ] && return 0
         sleep 1.0
     done

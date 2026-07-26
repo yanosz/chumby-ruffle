@@ -364,6 +364,41 @@ Only after the live number holds, in this order:
 - **5b bitmap fills** — currently flat grey; proper bitmap-shader fills.
 - **5c focal gradients** — drawn as plain radial today.
 
+#### Steps 5b and 5c results (2026-07-26, DONE)
+
+**Bitmap fills** now sample the bitmap. They are resolved in `register_shape`,
+which is where the shape's `BitmapSource` is available, and kept as a
+`SkPaint::Bitmap` beside the shape: a `Pattern` borrows the bitmap, which lives
+behind a `RefCell`, so unlike a colour or gradient its paint can only be built
+inside that borrow at draw time. Non-repeating fills clamp (`SpreadMode::Pad`),
+matching Flash; `is_smoothed` picks bilinear over nearest. Patterns carry an
+opacity but no colour transform, so alpha fades apply and RGB tinting still does
+not — the same limit `render_bitmap` already had. A shape whose bitmap cannot be
+resolved keeps the old grey and now logs.
+
+**Focal gradients** are the same circle with the start point slid along the
+gradient square's x axis, which is exactly tiny-skia's two-point conical; the
+offset is clamped to ±0.98 as Flash does, where the cone degenerates. Checked
+against the canvas backend's `create_radial_gradient` rather than guessed.
+
+Two new integration tests: a bitmap-filled shape samples the bitmap's quadrants,
+and a focal offset moves the gradient's brightest column right of the plain
+radial's. 18 tests pass.
+
+**Verified against wgpu on the panel's own screens** — the B2 control panel
+(volume) and settings screens, driven through the real UI: **98.8 % of pixels
+within 16 levels, 99.8 % within 48**, with the menu bar cropped off the wgpu
+capture since tiny-skia has no GUI.
+
+Getting there cost two harness mistakes worth remembering: adapting
+`verify-screens.sh` I lowered `RUST_LOG` below the level its bend check greps,
+and I "corrected" its click coordinates by the menu-bar height, which broke
+navigation — the six screens the first sweep produced were all the same clock
+screen. The script's own coordinates work unadjusted. Its bend check greps for
+`pressBendSensor`, which this panel never traces (it emits
+`WidgetMode.pollBendSensor(): Bend sensor activated`), so the check now accepts
+either.
+
 Filters, PixelBender, Context3D and `render_offscreen` stay unimplemented
 unless step 3 shows the panel needs them. **CHECKPOINT 5** after each substep.
 

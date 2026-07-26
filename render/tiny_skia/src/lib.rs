@@ -33,7 +33,8 @@ use ruffle_render::shape_utils::{DistilledShape, DrawCommand, DrawPath, FillRule
 use swf::{Color, ColorTransform, FillStyle, Gradient, GradientSpread};
 use tiny_skia::{
     FillRule as SkFillRule, FilterQuality, GradientStop, IntSize, LinearGradient, Paint, Path,
-    Mask, PathBuilder, Pixmap, PixmapPaint, Point, RadialGradient, Shader, SpreadMode, Stroke,
+    Mask, PathBuilder, Pattern, Pixmap, PixmapPaint, PixmapRef, Point, RadialGradient, Shader,
+    SpreadMode, Stroke,
     Transform as SkTransform,
 };
 
@@ -81,6 +82,31 @@ impl TinySkiaRenderBackend {
     /// The rendered frame, for a harness to read back (the trait has no present).
     pub fn frame(&self) -> &Pixmap {
         &self.frame
+    }
+
+    /// Bitmap fills must be resolved while the shape's `BitmapSource` is at
+    /// hand; everything else becomes a paint straight away.
+    fn shape_paint(&mut self, style: &FillStyle, source: &dyn BitmapSource) -> SkPaint {
+        if let FillStyle::Bitmap {
+            id,
+            matrix,
+            is_smoothed,
+            is_repeating,
+        } = style
+        {
+            match source.bitmap_handle(*id, self) {
+                Some(handle) => {
+                    return SkPaint::Bitmap(SkBitmapFill {
+                        handle,
+                        matrix: *matrix,
+                        smoothed: *is_smoothed,
+                        repeating: *is_repeating,
+                    });
+                }
+                None => log::warn!("shape fills with unknown bitmap {id}"),
+            }
+        }
+        SkPaint::Solid(Box::new(fill_paint(style, &ColorTransform::IDENTITY)))
     }
 }
 
@@ -202,15 +228,31 @@ enum SkDraw {
     Fill {
         path: Path,
         style: FillStyle,
-        paint: Paint<'static>,
+        paint: SkPaint,
         rule: SkFillRule,
     },
     Stroke {
         path: Path,
         style: FillStyle,
-        paint: Paint<'static>,
+        paint: SkPaint,
         width: f32,
     },
+}
+
+enum SkPaint {
+    /// Colour or gradient: independent of any bitmap, so built once.
+    Solid(Box<Paint<'static>>),
+    /// A bitmap fill's `Pattern` borrows the bitmap, which lives behind a
+    /// `RefCell`, so its paint can only exist inside the borrow at draw time.
+    Bitmap(SkBitmapFill),
+}
+
+struct SkBitmapFill {
+    handle: BitmapHandle,
+    /// Maps the bitmap's pixel grid into the shape's twips space.
+    matrix: swf::Matrix,
+    smoothed: bool,
+    repeating: bool,
 }
 
 struct SkShape(Vec<SkDraw>);
@@ -328,23 +370,58 @@ fn fill_shader(style: &FillStyle, ctx: &ColorTransform) -> Shader<'static> {
             sk_transform_swf(&gradient.matrix),
         )
         .unwrap_or_else(|| solid_fallback(gradient, ctx)),
-        FillStyle::RadialGradient(gradient) | FillStyle::FocalGradient { gradient, .. } => {
-            // Focal offset is ignored for the spike — rendered as a plain radial.
-            RadialGradient::new(
-                Point::from_xy(0.0, 0.0),
-                Point::from_xy(0.0, 0.0),
-                GRADIENT_HALF,
-                gradient_stops(gradient, ctx),
-                sk_spread(gradient.spread),
-                sk_transform_swf(&gradient.matrix),
-            )
-            .unwrap_or_else(|| solid_fallback(gradient, ctx))
-        }
-        // Spike: bitmap-filled vector shapes render flat. Photographic content
-        // arrives via `render_bitmap`, which is implemented.
+        // A focal gradient is the same circle with the first stop moved along
+        // the gradient square's x axis; tiny-skia's two-point conical takes
+        // that as its start point. Flash clamps the offset just short of the
+        // edge, where the cone degenerates.
+        FillStyle::RadialGradient(gradient) => focal_gradient(gradient, 0.0, ctx),
+        FillStyle::FocalGradient {
+            gradient,
+            focal_point,
+        } => focal_gradient(gradient, focal_point.to_f32(), ctx),
+        // Handled by the caller, which owns the bitmap borrow; a shape that
+        // reaches here referenced a bitmap that could not be resolved.
         FillStyle::Bitmap { .. } => {
             Shader::SolidColor(transform_color(&Color::from_rgb(0x808080, 255), ctx))
         }
+    }
+}
+
+fn focal_gradient(gradient: &Gradient, focal_point: f32, ctx: &ColorTransform) -> Shader<'static> {
+    RadialGradient::new(
+        Point::from_xy(focal_point.clamp(-0.98, 0.98) * GRADIENT_HALF, 0.0),
+        Point::from_xy(0.0, 0.0),
+        GRADIENT_HALF,
+        gradient_stops(gradient, ctx),
+        sk_spread(gradient.spread),
+        sk_transform_swf(&gradient.matrix),
+    )
+    .unwrap_or_else(|| solid_fallback(gradient, ctx))
+}
+
+/// A bitmap fill's paint, built inside the borrow of the bitmap it samples.
+fn bitmap_paint<'a>(fill: &SkBitmapFill, pixmap: PixmapRef<'a>, ctx: &ColorTransform) -> Paint<'a> {
+    Paint {
+        shader: Pattern::new(
+            pixmap,
+            if fill.repeating {
+                SpreadMode::Repeat
+            } else {
+                // Flash clamps a non-repeating bitmap fill at its edges.
+                SpreadMode::Pad
+            },
+            if fill.smoothed {
+                FilterQuality::Bilinear
+            } else {
+                FilterQuality::Nearest
+            },
+            // tiny-skia patterns carry an opacity but no colour transform, so
+            // fades apply and RGB tinting does not.
+            ctx.a_multiply.to_f32().clamp(0.0, 1.0),
+            sk_transform_swf(&fill.matrix),
+        ),
+        anti_alias: true,
+        ..Default::default()
     }
 }
 
@@ -442,7 +519,7 @@ impl RenderBackend for TinySkiaRenderBackend {
     fn register_shape(
         &mut self,
         shape: DistilledShape,
-        _bitmap_source: &dyn BitmapSource,
+        bitmap_source: &dyn BitmapSource,
     ) -> ShapeHandle {
         let mut draws = Vec::new();
         for path in &shape.paths {
@@ -454,7 +531,7 @@ impl RenderBackend for TinySkiaRenderBackend {
                 } => {
                     if let Some(path) = build_path(commands, true) {
                         let style = (*style).clone();
-                        let paint = fill_paint(&style, &ColorTransform::IDENTITY);
+                        let paint = self.shape_paint(&style, bitmap_source);
                         draws.push(SkDraw::Fill {
                             path,
                             style,
@@ -470,7 +547,7 @@ impl RenderBackend for TinySkiaRenderBackend {
                 } => {
                     if let Some(path) = build_path(commands, *is_closed) {
                         let fill_style = style.fill_style().clone();
-                        let paint = fill_paint(&fill_style, &ColorTransform::IDENTITY);
+                        let paint = self.shape_paint(&fill_style, bitmap_source);
                         draws.push(SkDraw::Stroke {
                             path,
                             style: fill_style,
@@ -691,16 +768,23 @@ impl CommandHandler for TinySkiaRenderBackend {
                     style,
                     paint,
                     rule,
-                } => {
-                    let rebuilt;
-                    let paint = if identity {
-                        paint
-                    } else {
-                        rebuilt = fill_paint(style, &ctx);
-                        &rebuilt
-                    };
-                    let _ = pixmap.fill_path(path, paint, *rule, matrix, clip);
-                }
+                } => match paint {
+                    SkPaint::Solid(cached) => {
+                        let rebuilt;
+                        let paint = if identity {
+                            cached.as_ref()
+                        } else {
+                            rebuilt = fill_paint(style, &ctx);
+                            &rebuilt
+                        };
+                        let _ = pixmap.fill_path(path, paint, *rule, matrix, clip);
+                    }
+                    SkPaint::Bitmap(fill) => {
+                        let bitmap = as_sk_bitmap(&fill.handle).pixmap.borrow();
+                        let paint = bitmap_paint(fill, bitmap.as_ref(), &ctx);
+                        let _ = pixmap.fill_path(path, &paint, *rule, matrix, clip);
+                    }
+                },
                 SkDraw::Stroke {
                     path,
                     style,
@@ -711,14 +795,23 @@ impl CommandHandler for TinySkiaRenderBackend {
                         width: *width,
                         ..Default::default()
                     };
-                    let rebuilt;
-                    let paint = if identity {
-                        paint
-                    } else {
-                        rebuilt = fill_paint(style, &ctx);
-                        &rebuilt
-                    };
-                    let _ = pixmap.stroke_path(path, paint, &stroke, matrix, clip);
+                    match paint {
+                        SkPaint::Solid(cached) => {
+                            let rebuilt;
+                            let paint = if identity {
+                                cached.as_ref()
+                            } else {
+                                rebuilt = fill_paint(style, &ctx);
+                                &rebuilt
+                            };
+                            let _ = pixmap.stroke_path(path, paint, &stroke, matrix, clip);
+                        }
+                        SkPaint::Bitmap(fill) => {
+                            let bitmap = as_sk_bitmap(&fill.handle).pixmap.borrow();
+                            let paint = bitmap_paint(fill, bitmap.as_ref(), &ctx);
+                            let _ = pixmap.stroke_path(path, &paint, &stroke, matrix, clip);
+                        }
+                    }
                 }
             }
         }

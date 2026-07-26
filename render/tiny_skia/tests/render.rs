@@ -4,7 +4,9 @@
 
 use ruffle_render::backend::null::NullBitmapSource;
 use ruffle_render::backend::{Context3DProfile, RenderBackend, ViewportDimensions};
-use ruffle_render::bitmap::{Bitmap, BitmapFormat, PixelRegion, PixelSnapping};
+use ruffle_render::bitmap::{
+    Bitmap, BitmapFormat, BitmapHandle, BitmapSize, BitmapSource, PixelRegion, PixelSnapping,
+};
 use ruffle_render::commands::{CommandHandler, CommandList};
 use ruffle_render::matrix::Matrix;
 use ruffle_render::shape_utils::{DistilledShape, DrawCommand, DrawPath, FillRule};
@@ -293,4 +295,134 @@ fn metadata_and_stubs() {
     assert_eq!(backend.frame().height(), 24);
 
     assert!(backend.create_context3d(Context3DProfile::Baseline).is_err());
+}
+
+/// A `BitmapSource` that answers every id with one already-registered bitmap,
+/// which is all a bitmap *fill* needs to be resolved.
+struct OneBitmap(BitmapHandle);
+
+impl BitmapSource for OneBitmap {
+    fn bitmap_size(&self, _id: u16) -> Option<BitmapSize> {
+        Some(BitmapSize {
+            width: 2,
+            height: 2,
+        })
+    }
+
+    fn bitmap_handle(&self, _id: u16, _renderer: &mut dyn RenderBackend) -> Option<BitmapHandle> {
+        Some(self.0.clone())
+    }
+}
+
+/// A bitmap-filled vector shape samples the bitmap. The fill matrix maps the
+/// bitmap's pixel grid into twips, so one bitmap pixel spans `20 * factor`.
+#[test]
+fn bitmap_fill_samples_the_bitmap() {
+    #[rustfmt::skip]
+    let data = vec![
+        255, 0, 0, 255,   0, 255, 0, 255,
+        0, 0, 255, 255,   255, 255, 255, 255,
+    ];
+    let mut backend = TinySkiaRenderBackend::new(20, 20);
+    let handle = backend
+        .register_bitmap(Bitmap::new(2, 2, BitmapFormat::Rgba, data))
+        .expect("register_bitmap");
+
+    let fill = FillStyle::Bitmap {
+        id: 1,
+        matrix: SwfMatrix {
+            a: Fixed16::from_f32(200.0),
+            b: Fixed16::from_f32(0.0),
+            c: Fixed16::from_f32(0.0),
+            d: Fixed16::from_f32(200.0),
+            tx: Twips::ZERO,
+            ty: Twips::ZERO,
+        },
+        is_smoothed: false,
+        is_repeating: false,
+    };
+    let shape = DistilledShape {
+        paths: vec![DrawPath::Fill {
+            style: &fill,
+            commands: rect_cmds(0.0, 0.0, 20.0, 20.0),
+            winding_rule: FillRule::NonZero,
+        }],
+        shape_bounds: stage_bounds(20.0, 20.0),
+        edge_bounds: stage_bounds(20.0, 20.0),
+        id: 1,
+    };
+
+    let shape_handle = backend.register_shape(shape, &OneBitmap(handle));
+    let mut commands = CommandList::new();
+    commands.render_shape(shape_handle, identity());
+    backend.submit_frame(Color::BLACK, commands, Vec::new());
+
+    let frame = backend.frame();
+    let red = px(frame, 5, 5);
+    let green = px(frame, 15, 5);
+    let blue = px(frame, 5, 15);
+    assert!(red[0] > 200 && red[1] < 60, "red={red:?}");
+    assert!(green[1] > 200 && green[0] < 60, "green={green:?}");
+    assert!(blue[2] > 200 && blue[0] < 60, "blue={blue:?}");
+}
+
+/// A focal gradient is a radial one whose bright centre has slid along the
+/// gradient square's x axis.
+#[test]
+fn focal_offset_moves_the_gradient_centre() {
+    let w = 100.0;
+    let gradient = Gradient {
+        matrix: SwfMatrix {
+            a: Fixed16::from_f32((w * 20.0 / 32768.0) as f32),
+            b: Fixed16::from_f32(0.0),
+            c: Fixed16::from_f32(0.0),
+            d: Fixed16::from_f32((w * 20.0 / 32768.0) as f32),
+            tx: Twips::from_pixels(w / 2.0),
+            ty: Twips::from_pixels(w / 2.0),
+        },
+        spread: GradientSpread::Pad,
+        interpolation: GradientInterpolation::Rgb,
+        records: vec![
+            GradientRecord {
+                ratio: 0,
+                color: Color::WHITE,
+            },
+            GradientRecord {
+                ratio: 255,
+                color: Color::BLACK,
+            },
+        ],
+    };
+
+    let brightest_column = |style: FillStyle| {
+        let shape = DistilledShape {
+            paths: vec![DrawPath::Fill {
+                style: &style,
+                commands: rect_cmds(0.0, 0.0, w, w),
+                winding_rule: FillRule::NonZero,
+            }],
+            shape_bounds: stage_bounds(w, w),
+            edge_bounds: stage_bounds(w, w),
+            id: 1,
+        };
+        let mut backend = TinySkiaRenderBackend::new(w as u32, w as u32);
+        let handle = backend.register_shape(shape, &NullBitmapSource);
+        let mut commands = CommandList::new();
+        commands.render_shape(handle, identity());
+        backend.submit_frame(Color::BLACK, commands, Vec::new());
+        let frame = backend.frame();
+        (0..w as u32)
+            .max_by_key(|x| px(frame, *x, w as u32 / 2)[0])
+            .expect("non-empty row")
+    };
+
+    let plain = brightest_column(FillStyle::RadialGradient(gradient.clone()));
+    let focal = brightest_column(FillStyle::FocalGradient {
+        gradient,
+        focal_point: Fixed8::from_f32(0.8),
+    });
+    assert!(
+        focal > plain + 10,
+        "focal centre should sit right of the plain one: focal={focal} plain={plain}"
+    );
 }
