@@ -37,7 +37,7 @@ clears then walks the `CommandList` via a `CommandHandler` impl painting into
 a `Pixmap`. `Context3D`, filters, PixelBender, `render_offscreen` all stubbed
 unsupported.
 
-**Checkpoint**: crate compiles standalone.
+**Checkpoint**: crate compiles standalone. — **DONE** (see log below).
 
 ### 2. Prototype harness
 
@@ -81,3 +81,41 @@ result than one that hits 12 fps at 100%.
 **Checkpoint — report Pi numbers vs. baseline (both fps and CPU%); decide
 whether to invest in the real `submit_frame`/live-player integration or stop
 here.**
+
+## Checkpoint log
+
+### Step 1 — crate compiles standalone (DONE)
+
+`render/tiny_skia` (`ruffle_render_tiny_skia`) builds warning-clean; added to
+the workspace members. `tiny-skia = "0.11.4"` (already transitive in the lock).
+`TinySkiaRenderBackend { frame: Pixmap, dimensions }` with a `frame()`
+read-back accessor (the trait has no present step; the harness reads pixels out
+in Step 2).
+
+Implemented for real:
+- `register_shape`: `DrawPath` → `tiny_skia::Path` via `PathBuilder`, no lyon.
+  Solid + linear + radial gradient fills (native tiny-skia shaders). Strokes
+  reuse the line's `fill_style` shader.
+- `register_bitmap`/`update_texture`/`create_empty_texture` → `Pixmap`
+  (`RefCell` so `update_texture` can mutate a shared handle).
+- `submit_frame`: clear + `CommandList::execute(self)`.
+- `render_bitmap`, `draw_rect`/`draw_line`/`draw_line_rect`.
+
+Coordinate convention mirrors `canvas`: paths/matrices kept in twips, a 1/20
+scale folded into the paint transform (`TWIPS_TO_PIXELS`). tiny-skia
+premultiplied storage matches `BitmapFormat::Rgba` (premultiplied), fed
+directly.
+
+Deliberate gaps to eyeball in Step 2 (all defensible for a spike, flagged so
+the PNG diff isn't a surprise):
+- **Bitmap *fills*** (`FillStyle::Bitmap`) render flat grey — photographic
+  content still goes through `render_bitmap`, which is real.
+- **Focal gradients** rendered as plain radial (focal offset dropped).
+- **Masks / blend modes** are no-ops: masked/blended content draws unclipped
+  and un-blended (over-draw), not skipped, so cost is still counted.
+- **Color transforms** ignored (no tint/alpha fade on shapes/bitmaps yet).
+- Offscreen, filters, PixelBender, Context3D → `Unimplemented`/`None`.
+
+Open risk for Step 2 integration (not Step 1): handles use non-`Send`/`Sync`
+`Arc`/`RefCell`; fine for the crate and a single-threaded harness, may need
+revisiting if the exporter path demands `Send`.
