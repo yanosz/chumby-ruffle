@@ -164,13 +164,31 @@ First eyeball vs. the wgpu (lavapipe) reference, both 320×240:
   match. The tiny ™ superscript is the only near-invisible miss.
 - **controlpanel.swf** (frame 7, boot "Initializing…"): header, octopus glyph
   and segmented spinner all correct, **but** the large faint octopus watermark
-  (and two ring "eyes") that wgpu shows behind the spinner is **missing**.
-  Most likely the grey overlay is semi-transparent via a **color transform
-  (alpha)** in wgpu — showing the octopus through — while we paint it opaque
-  (color transforms are stubbed). A mask/bitmap-fill cause isn't ruled out; not
-  yet bisected.
+  that wgpu shows behind the spinner is **missing** — instead the whole ground
+  reads neutral grey.
 
-Takeaway: the CPU backend renders real panel content correctly; the one visible
-gap traces to the ignored **color-transform alpha** stub. Candidate first
-fidelity fix if the spike proceeds. Harness output lives in the session
-scratchpad (not committed).
+Root cause — **bisected**, not guessed (initial color-transform hypothesis was
+wrong):
+- Implemented colour-transform support (fills: full `ctx`; bitmaps:
+  `a_multiply` → opacity) and re-rendered — octopus **still missing**. So it is
+  *not* colour transform.
+- Probe: bitmap-fills tinted magenta → nothing appears. Not a bitmap fill.
+- Probe: mask *shapes* tinted green → nothing appears. Not the masker.
+- Numeric diff (my frame vs wgpu ref): octopus region is flat background grey
+  (204,204,204) here vs faint blue (206,221,239) in wgpu; mean abs diff ~60.
+- The panel emits **2 masks/frame**. Conclusion: the octopus is the **maskee**
+  (a light-blue fill clipped to an octopus-shaped mask). Our no-op masks draw
+  the maskee **unclipped**, and later opaque draws cover it → it vanishes.
+
+Takeaway: the CPU backend renders most panel content correctly; the visible gap
+is **mask clipping** (a spike non-goal), *not* colour transform. Real masks
+(tiny-skia has `Mask`) are the fix — bigger than the colour-transform change.
+The colour-transform work is still correct and useful (tints/alpha fades on
+shapes and bitmaps) and stays. Harness output lives in the session scratchpad
+(not committed).
+
+**Decision (Jan, 2026-07-26): skip masks for now.** Accept the cosmetic octopus
+gap and proceed to Step 3 (measurement) — the spike is about CPU load, and
+fidelity is already enough to measure representative work. Masks (and bitmap
+*fills*) are the top fidelity items **only if** the numbers justify turning this
+into a real backend; not worth building on a spike that might not proceed.

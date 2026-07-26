@@ -11,8 +11,8 @@ use ruffle_render::shape_utils::{DistilledShape, DrawCommand, DrawPath, FillRule
 use ruffle_render::transform::Transform;
 use ruffle_render_tiny_skia::TinySkiaRenderBackend;
 use swf::{
-    Color, Fixed16, FillStyle, Gradient, GradientInterpolation, GradientRecord, GradientSpread,
-    Matrix as SwfMatrix, Point, Rectangle, Twips,
+    Color, ColorTransform, Fixed8, Fixed16, FillStyle, Gradient, GradientInterpolation,
+    GradientRecord, GradientSpread, Matrix as SwfMatrix, Point, Rectangle, Twips,
 };
 use tiny_skia::Pixmap;
 
@@ -237,6 +237,44 @@ fn update_texture_replaces_pixels() {
 
     let center = px(backend.frame(), 10, 10);
     assert!(center[1] > 200 && center[0] < 60, "center={center:?}");
+}
+
+#[test]
+fn color_transform_alpha_blends() {
+    // A green fill at 50% alpha over a red clear should blend to a mid tone,
+    // proving the render-time colour transform reaches the shader.
+    let green = FillStyle::Color(Color::from_rgb(0x00FF00, 255));
+    let shape = DistilledShape {
+        paths: vec![DrawPath::Fill {
+            style: &green,
+            commands: rect_cmds(0.0, 0.0, 8.0, 8.0),
+            winding_rule: FillRule::NonZero,
+        }],
+        shape_bounds: stage_bounds(8.0, 8.0),
+        edge_bounds: stage_bounds(8.0, 8.0),
+        id: 1,
+    };
+
+    let mut backend = TinySkiaRenderBackend::new(8, 8);
+    let handle = backend.register_shape(shape, &NullBitmapSource);
+    let mut commands = CommandList::new();
+    commands.render_shape(
+        handle,
+        Transform {
+            matrix: Matrix::IDENTITY,
+            color_transform: ColorTransform {
+                a_multiply: Fixed8::from_f32(0.5),
+                ..ColorTransform::IDENTITY
+            },
+            ..Default::default()
+        },
+    );
+    backend.submit_frame(Color::from_rgb(0xFF0000, 255), commands, Vec::new());
+
+    let c = px(backend.frame(), 4, 4);
+    assert!(c[0] > 90 && c[0] < 180, "red channel not blended: {c:?}");
+    assert!(c[1] > 90 && c[1] < 180, "green channel not blended: {c:?}");
+    assert!(c[2] < 40, "blue should stay low: {c:?}");
 }
 
 #[test]

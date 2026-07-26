@@ -30,7 +30,7 @@ use ruffle_render::pixel_bender::{PixelBenderShader, PixelBenderShaderHandle};
 use ruffle_render::pixel_bender_support::PixelBenderShaderArgument;
 use ruffle_render::quality::StageQuality;
 use ruffle_render::shape_utils::{DistilledShape, DrawCommand, DrawPath, FillRule};
-use swf::{Color, FillStyle, Gradient, GradientSpread, LineStyle};
+use swf::{Color, ColorTransform, FillStyle, Gradient, GradientSpread};
 use tiny_skia::{
     FillRule as SkFillRule, FilterQuality, GradientStop, IntSize, LinearGradient, Paint, Path,
     PathBuilder, Pixmap, PixmapPaint, Point, RadialGradient, Shader, SpreadMode, Stroke,
@@ -77,11 +77,13 @@ fn new_pixmap(width: u32, height: u32) -> Pixmap {
 enum SkDraw {
     Fill {
         path: Path,
+        style: FillStyle,
         paint: Paint<'static>,
         rule: SkFillRule,
     },
     Stroke {
         path: Path,
+        style: FillStyle,
         paint: Paint<'static>,
         width: f32,
     },
@@ -145,11 +147,18 @@ fn sk_spread(spread: GradientSpread) -> SpreadMode {
     }
 }
 
-fn gradient_stops(gradient: &Gradient) -> Vec<GradientStop> {
+/// A colour with the render-time colour transform applied.
+fn transform_color(color: &Color, ctx: &ColorTransform) -> tiny_skia::Color {
+    sk_color(&(ctx * *color))
+}
+
+fn gradient_stops(gradient: &Gradient, ctx: &ColorTransform) -> Vec<GradientStop> {
     gradient
         .records
         .iter()
-        .map(|record| GradientStop::new(f32::from(record.ratio) / 255.0, sk_color(&record.color)))
+        .map(|record| {
+            GradientStop::new(f32::from(record.ratio) / 255.0, transform_color(&record.color, ctx))
+        })
         .collect()
 }
 
@@ -167,56 +176,49 @@ fn sk_transform_swf(matrix: &swf::Matrix) -> SkTransform {
     )
 }
 
-fn fill_shader(style: &FillStyle) -> Shader<'static> {
+fn fill_shader(style: &FillStyle, ctx: &ColorTransform) -> Shader<'static> {
     match style {
-        FillStyle::Color(color) => Shader::SolidColor(sk_color(color)),
+        FillStyle::Color(color) => Shader::SolidColor(transform_color(color, ctx)),
         FillStyle::LinearGradient(gradient) => LinearGradient::new(
             Point::from_xy(-GRADIENT_HALF, 0.0),
             Point::from_xy(GRADIENT_HALF, 0.0),
-            gradient_stops(gradient),
+            gradient_stops(gradient, ctx),
             sk_spread(gradient.spread),
             sk_transform_swf(&gradient.matrix),
         )
-        .unwrap_or_else(|| solid_fallback(gradient)),
+        .unwrap_or_else(|| solid_fallback(gradient, ctx)),
         FillStyle::RadialGradient(gradient) | FillStyle::FocalGradient { gradient, .. } => {
             // Focal offset is ignored for the spike — rendered as a plain radial.
             RadialGradient::new(
                 Point::from_xy(0.0, 0.0),
                 Point::from_xy(0.0, 0.0),
                 GRADIENT_HALF,
-                gradient_stops(gradient),
+                gradient_stops(gradient, ctx),
                 sk_spread(gradient.spread),
                 sk_transform_swf(&gradient.matrix),
             )
-            .unwrap_or_else(|| solid_fallback(gradient))
+            .unwrap_or_else(|| solid_fallback(gradient, ctx))
         }
         // Spike: bitmap-filled vector shapes render flat. Photographic content
         // arrives via `render_bitmap`, which is implemented.
-        FillStyle::Bitmap { .. } => Shader::SolidColor(tiny_skia::Color::from_rgba8(128, 128, 128, 255)),
+        FillStyle::Bitmap { .. } => {
+            Shader::SolidColor(transform_color(&Color::from_rgb(0x808080, 255), ctx))
+        }
     }
 }
 
-fn solid_fallback(gradient: &Gradient) -> Shader<'static> {
+fn solid_fallback(gradient: &Gradient, ctx: &ColorTransform) -> Shader<'static> {
     let color = gradient
         .records
         .first()
-        .map(|record| sk_color(&record.color))
+        .map(|record| transform_color(&record.color, ctx))
         .unwrap_or(tiny_skia::Color::BLACK);
     Shader::SolidColor(color)
 }
 
-fn fill_paint(style: &FillStyle) -> Paint<'static> {
+fn fill_paint(style: &FillStyle, ctx: &ColorTransform) -> Paint<'static> {
     let mut paint = Paint {
-        shader: fill_shader(style),
-        ..Default::default()
-    };
-    paint.anti_alias = true;
-    paint
-}
-
-fn stroke_paint(style: &LineStyle) -> Paint<'static> {
-    let mut paint = Paint {
-        shader: fill_shader(style.fill_style()),
+        shader: fill_shader(style, ctx),
         ..Default::default()
     };
     paint.anti_alias = true;
@@ -310,9 +312,12 @@ impl RenderBackend for TinySkiaRenderBackend {
                     winding_rule,
                 } => {
                     if let Some(path) = build_path(commands, true) {
+                        let style = (*style).clone();
+                        let paint = fill_paint(&style, &ColorTransform::IDENTITY);
                         draws.push(SkDraw::Fill {
                             path,
-                            paint: fill_paint(style),
+                            style,
+                            paint,
                             rule: sk_fill_rule(*winding_rule),
                         });
                     }
@@ -323,9 +328,12 @@ impl RenderBackend for TinySkiaRenderBackend {
                     commands,
                 } => {
                     if let Some(path) = build_path(commands, *is_closed) {
+                        let fill_style = style.fill_style().clone();
+                        let paint = fill_paint(&fill_style, &ColorTransform::IDENTITY);
                         draws.push(SkDraw::Stroke {
                             path,
-                            paint: stroke_paint(style),
+                            style: fill_style,
+                            paint,
                             width: style.width().get() as f32,
                         });
                     }
@@ -457,7 +465,11 @@ impl CommandHandler for TinySkiaRenderBackend {
     ) {
         let sk = as_sk_bitmap(&bitmap);
         let pixmap = sk.pixmap.borrow();
+        // tiny-skia bitmaps only carry an opacity, not a full colour transform;
+        // apply the alpha multiply (fades) and leave RGB tinting for later.
+        let opacity = transform.color_transform.a_multiply.to_f32().clamp(0.0, 1.0);
         let paint = PixmapPaint {
+            opacity,
             quality: if smoothing {
                 FilterQuality::Bilinear
             } else {
@@ -483,16 +495,44 @@ impl CommandHandler for TinySkiaRenderBackend {
     fn render_shape(&mut self, shape: ShapeHandle, transform: ruffle_render::transform::Transform) {
         let sk = as_sk_shape(&shape);
         let matrix = sk_transform(&transform.matrix, TWIPS_TO_PIXELS);
+        // Cached paints hold the untransformed colours; only rebuild when a
+        // real colour transform (tint / alpha fade) is in play.
+        let ctx = transform.color_transform;
+        let identity = ctx == ColorTransform::IDENTITY;
         let mut pixmap = self.frame.as_mut();
         for draw in &sk.0 {
             match draw {
-                SkDraw::Fill { path, paint, rule } => {
+                SkDraw::Fill {
+                    path,
+                    style,
+                    paint,
+                    rule,
+                } => {
+                    let rebuilt;
+                    let paint = if identity {
+                        paint
+                    } else {
+                        rebuilt = fill_paint(style, &ctx);
+                        &rebuilt
+                    };
                     let _ = pixmap.fill_path(path, paint, *rule, matrix, None);
                 }
-                SkDraw::Stroke { path, paint, width } => {
+                SkDraw::Stroke {
+                    path,
+                    style,
+                    paint,
+                    width,
+                } => {
                     let stroke = Stroke {
                         width: *width,
                         ..Default::default()
+                    };
+                    let rebuilt;
+                    let paint = if identity {
+                        paint
+                    } else {
+                        rebuilt = fill_paint(style, &ctx);
+                        &rebuilt
                     };
                     let _ = pixmap.stroke_path(path, paint, &stroke, matrix, None);
                 }
