@@ -44,8 +44,28 @@ const TWIPS_TO_PIXELS: f32 = 0.05;
 /// The gradient square SWF gradients are defined in: x/y span ±16384 twips.
 const GRADIENT_HALF: f32 = 16384.0;
 
+#[derive(Default, Debug)]
+pub struct SpikeStats {
+    pub shapes: u32,
+    pub bitmaps: u32,
+    pub rects: u32,
+    pub lines: u32,
+    pub masks: u32,
+    pub alpha_masks: u32,
+    pub blends: u32,
+    pub offscreen: u32,
+}
+
 pub struct TinySkiaRenderBackend {
+    pub stats: SpikeStats,
     frame: Pixmap,
+    /// Non-zero while the command stream is submitting *mask* geometry rather
+    /// than content. Ruffle brackets a maskee with the mask's own shapes
+    /// (push_mask..activate_mask, then deactivate_mask..pop_mask, which is
+    /// where wgpu builds and clears its stencil). Drawing those shapes paints
+    /// the mask's fill over the picture, so until real clipping exists they
+    /// are dropped instead.
+    mask_depth: u32,
     dimensions: ViewportDimensions,
 }
 
@@ -53,7 +73,9 @@ impl TinySkiaRenderBackend {
     pub fn new(width: u32, height: u32) -> Self {
         let frame = new_pixmap(width, height);
         Self {
+            stats: SpikeStats::default(),
             frame,
+            mask_depth: 0,
             dimensions: ViewportDimensions {
                 width: width.max(1),
                 height: height.max(1),
@@ -350,6 +372,7 @@ impl RenderBackend for TinySkiaRenderBackend {
         _quality: StageQuality,
         _bounds: PixelRegion,
     ) -> Option<Box<dyn SyncHandle>> {
+        self.stats.offscreen += 1;
         None
     }
 
@@ -360,7 +383,11 @@ impl RenderBackend for TinySkiaRenderBackend {
         _cache_entries: Vec<BitmapCacheEntry>,
     ) {
         self.frame.fill(sk_color(&clear));
+        self.stats = SpikeStats::default();
         commands.execute(self);
+        if std::env::var_os("CHUMBY_TS_STATS").is_some() {
+            log::warn!("tiny-skia frame stats: {:?}", self.stats);
+        }
     }
 
     fn create_empty_texture(
@@ -463,6 +490,10 @@ impl CommandHandler for TinySkiaRenderBackend {
         smoothing: bool,
         _pixel_snapping: PixelSnapping,
     ) {
+        self.stats.bitmaps += 1;
+        if self.mask_depth > 0 {
+            return;
+        }
         let sk = as_sk_bitmap(&bitmap);
         let pixmap = sk.pixmap.borrow();
         // tiny-skia bitmaps only carry an opacity, not a full colour transform;
@@ -493,6 +524,10 @@ impl CommandHandler for TinySkiaRenderBackend {
     }
 
     fn render_shape(&mut self, shape: ShapeHandle, transform: ruffle_render::transform::Transform) {
+        self.stats.shapes += 1;
+        if self.mask_depth > 0 {
+            return;
+        }
         let sk = as_sk_shape(&shape);
         let matrix = sk_transform(&transform.matrix, TWIPS_TO_PIXELS);
         // Cached paints hold the untransformed colours; only rebuild when a
@@ -541,11 +576,16 @@ impl CommandHandler for TinySkiaRenderBackend {
     }
 
     fn render_alpha_mask(&mut self, maskee_commands: CommandList, _mask_commands: CommandList) {
+        self.stats.alpha_masks += 1;
         // Spike: no clipping — draw the maskee unclipped.
         maskee_commands.execute(self);
     }
 
     fn draw_rect(&mut self, color: Color, matrix: Matrix) {
+        self.stats.rects += 1;
+        if self.mask_depth > 0 {
+            return;
+        }
         let Some(path) = unit_rect() else { return };
         let paint = Paint {
             shader: Shader::SolidColor(sk_color(&color)),
@@ -560,6 +600,9 @@ impl CommandHandler for TinySkiaRenderBackend {
     }
 
     fn draw_line(&mut self, color: Color, matrix: Matrix) {
+        if self.mask_depth > 0 {
+            return;
+        }
         let mut builder = PathBuilder::new();
         builder.move_to(0.0, 0.0);
         builder.line_to(1.0, 0.0);
@@ -577,6 +620,9 @@ impl CommandHandler for TinySkiaRenderBackend {
     }
 
     fn draw_line_rect(&mut self, color: Color, matrix: Matrix) {
+        if self.mask_depth > 0 {
+            return;
+        }
         let Some(path) = unit_rect() else { return };
         let paint = Paint {
             shader: Shader::SolidColor(sk_color(&color)),
@@ -590,12 +636,25 @@ impl CommandHandler for TinySkiaRenderBackend {
             .stroke_path(&path, &paint, &Stroke::default(), transform, None);
     }
 
-    fn push_mask(&mut self) {}
-    fn activate_mask(&mut self) {}
-    fn deactivate_mask(&mut self) {}
-    fn pop_mask(&mut self) {}
+    fn push_mask(&mut self) {
+        self.stats.masks += 1;
+        self.mask_depth += 1;
+    }
+
+    fn activate_mask(&mut self) {
+        self.mask_depth = self.mask_depth.saturating_sub(1);
+    }
+
+    fn deactivate_mask(&mut self) {
+        self.mask_depth += 1;
+    }
+
+    fn pop_mask(&mut self) {
+        self.mask_depth = self.mask_depth.saturating_sub(1);
+    }
 
     fn blend(&mut self, commands: CommandList, _blend_mode: RenderBlendMode) {
+        self.stats.blends += 1;
         // Spike: blend modes unsupported — draw the inner commands normally.
         commands.execute(self);
     }

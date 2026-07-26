@@ -151,6 +151,11 @@ And the SPI panel shows **row-banded motion** (Jan, observing the probe): tinydr
 shifts a frame out progressively, so during a transfer the top rows already carry
 the new frame. Not a renderer artifact — the wgpu path uses the same transfer.
 
+**CHECKPOINT 1 answered (Jan, 2026-07-26):** path **(A) softbuffer** confirmed —
+no option (B), so tiny-skia mode has no egui overlay and wgpu stays selectable
+for desktop work. Proceed to step 2 now; the 640×480 HDMI figure is folded into
+step 4's on-device A/B instead of blocking integration.
+
 ### Step 2 — Renderer selection seam
 
 - `--renderer wgpu|tiny-skia` on the player CLI. No silent fallback: an
@@ -163,6 +168,58 @@ the new frame. Not a renderer artifact — the wgpu path uses the same transfer.
 Verification: existing test suite plus `verify-screens.sh` on the wgpu path,
 proving no regression; `--renderer tiny-skia` reaching the new present path.
 **CHECKPOINT 2**.
+
+#### Step 2 results (2026-07-26, DONE)
+
+`--renderer wgpu|tiny-skia` (`cli.rs`, `RendererChoice`); an unknown value is a
+clap error, never a fallback. Default stays `wgpu`, so upstream behaviour is
+untouched and the appliance opts in from its conffile (step 4).
+
+The seam sits inside `GuiController`, which now owns a `Present` enum instead of
+wgpu fields: `Present::Wgpu` (descriptors, egui, surface, movie-view renderer,
+theme controller — the desktop path, unchanged) and `Present::Software`
+(a softbuffer surface). `render()` dispatches to `render_wgpu` (the old body) or
+`render_software`, which downcasts the player's renderer to
+`TinySkiaRenderBackend`, converts its pixmap RGBA→X8R8G8B8 into the shm buffer
+and presents. `GuiController::descriptors()` became `Option` — nothing builds a
+wgpu device in software mode. `player.rs` gained `RenderTarget::{Wgpu(MovieView),
+Software{width,height}}` and builds the backend from it via
+`with_boxed_renderer`. Choosing the seam here rather than a second frontend keeps
+one event path and one frame path; `app.rs` needed only two lines.
+
+One real bug found while verifying: `needs_render()` compared against
+`repaint_after`, which only egui ever sets, so in software mode it was always
+true and the player redrew every loop iteration — 455 fps at 12 fps of content.
+With no GUI, nothing but the movie's own cadence may request a redraw.
+
+**Verified:** all 13 tiny-skia tests pass; the wgpu path renders the panel
+exactly as before (menu bar, clock, artwork); `--renderer tiny-skia` reaches the
+screen and rasterises real content at the right geometry and scale (viewport
+640×504, letterboxed stage, correct gradients).
+
+**But the panel is not usable in tiny-skia mode yet, and the cause is masks.**
+Instrumenting the backend (temporary `SpikeStats`, `CHUMBY_TS_STATS=1`) shows what
+the clock screen submits per frame: **28 shapes, 6 rects, 4 masks, and no
+bitmaps, blends or `render_offscreen`** — so the offscreen/`cacheAsBitmap`
+question from step 3 is answered: the panel does not need it.
+
+With the four mask calls as no-ops, ruffle's mask geometry — which it brackets
+around the maskee, and which wgpu turns into stencil build/clear — was being
+*drawn as content*, painting a flat grey (204,204,204) over the whole panel.
+Fixed halfway: a `mask_depth` counter now drops draws submitted as mask geometry
+instead of painting them, which is strictly closer to correct and made the screen
+appear. What remains is the other half of the same gap: the octopus watermark is
+a *maskee*, so unclipped it covers the entire stage and paints over the clock
+digits and the date. Screenshot comparison: wgpu shows "July 26 / 5:46 / p.m."
+over the artwork; tiny-skia shows the watermark alone.
+
+**Consequence for the plan's order.** "Integration first" rested on the spike's
+fidelity gaps being cosmetic. For masks that premise is false on the real panel:
+either mask geometry overpaints the screen or the maskee does. Step 5a (real
+clipping via tiny-skia's `Mask`) is therefore a **prerequisite for steps 3–4**,
+not later polish — an on-device A/B against wgpu has nothing meaningful to
+compare until the panel draws correctly. Bitmap fills (5b) remain genuinely
+cosmetic here: the clock screen submits no bitmaps at all.
 
 ### Step 3 — Live panel on the desktop, then the resolution lever
 

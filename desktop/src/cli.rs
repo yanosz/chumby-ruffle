@@ -151,6 +151,13 @@ pub struct Opt {
     #[clap(long)]
     pub chumby_control: Option<std::path::PathBuf>,
 
+    /// Render backend. `wgpu` draws through a graphics API (on the chumby's
+    /// hardware that means software Vulkan) and carries the egui GUI;
+    /// `tiny-skia` rasterises on the CPU and presents through shared
+    /// memory, with no Vulkan and no GUI overlay.
+    #[clap(long, default_value = "wgpu")]
+    pub renderer: RendererChoice,
+
     /// Proxy to use when loading movies via URL.
     #[clap(long)]
     pub proxy: Option<Url>,
@@ -318,6 +325,15 @@ impl Opt {
             }
         })
     }
+}
+
+/// Which `RenderBackend` the player builds, and therefore how frames reach
+/// the screen. An unknown value is a clap error, not a fallback.
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, clap::ValueEnum)]
+pub enum RendererChoice {
+    #[default]
+    Wgpu,
+    TinySkia,
 }
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, clap::ValueEnum)]

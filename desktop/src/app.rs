@@ -64,7 +64,9 @@ impl MainWindow {
                 }
 
                 self.gui.render(player);
-                plot_stats_in_tracy(&self.gui.descriptors().wgpu_instance);
+                if let Some(descriptors) = self.gui.descriptors() {
+                    plot_stats_in_tracy(&descriptors.wgpu_instance);
+                }
             }
 
             // Important that we return here, or we'll get a feedback loop with egui
@@ -619,7 +621,7 @@ impl ApplicationHandler<RuffleEvent> for App {
             let mut player = PlayerController::new(
                 event_loop_proxy.clone(),
                 window.clone(),
-                gui.descriptors().clone(),
+                gui.descriptors().cloned(),
                 font_database,
                 preferences.clone(),
                 gui.file_picker(),
