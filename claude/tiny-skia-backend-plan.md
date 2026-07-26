@@ -278,6 +278,21 @@ Open verification item: whether the panel ever needs `render_offscreen`
 (`cacheAsBitmap` / `BitmapCacheEntry`), which the spike stubs to `None`.
 **CHECKPOINT 3**.
 
+#### Step 3 results (2026-07-26, DONE)
+
+Both open items were settled before the device run:
+
+- **The live panel on the desktop** was verified while finishing masks (5a):
+  input, audio and the frame path are unchanged, and the clock screen matches
+  wgpu to 99.7 % of pixels.
+- **`render_offscreen` is never called** — step 2's instrumentation showed the
+  panel submitting only shapes, rects and masks. The stub stays.
+- **The resolution lever is not needed.** Rendering at the panel's own size
+  costs 37 % of a core on the device (step 4), so there is nothing to buy back;
+  and step 1 already measured tiny-skia's `draw_pixmap` upscale at 11–22 ms per
+  frame, far more than rasterising at full size. Revisit only if a larger panel
+  changes the arithmetic — the 640×480 HDMI box is still unmeasured.
+
 ### Step 4 — On device: A/B against wgpu
 
 Deploy with chumby-pi `pkg/deploy-pi.sh`; expose the choice as
@@ -292,6 +307,51 @@ baseline (which was taken on the 3A+/HDMI box).
 This is the step that either confirms or refutes the spike's promise in the real
 cage. **CHECKPOINT 4** — including whether tiny-skia becomes the shipped
 default.
+
+#### Step 4 results (2026-07-26, DONE)
+
+Box: 3B+ `192.168.42.51`, 480×320 SPI TFT, cage on pixman, panel started exactly
+as the service does (transient unit with `PAMName=login` + `TTYPath`). Each
+config ran to steady state (~30 s startup, then 25 s settling) before a 15 s
+window. CPU comes from `/proc` — the player's own utime+stime, and the whole
+box's busy time; fps is cage's `DRM_IOCTL_MODE_ATOMIC` commits (development.md
+§6's counter), measured *outside* the CPU window because strace slows what it
+traces.
+
+| config | player CPU | whole box | RSS | threads | fps |
+|---|---|---|---|---|---|
+| wgpu, shipped defaults (`low`, 2 threads) | 129 % of a core | 139 % | 252 MB | 24 | ~7 |
+| wgpu, stock (no quality/threads) | 241 % | 245 % | 296 MB | 28 | ~6 |
+| **tiny-skia** | **37 %** | **46 %** | **105 MB** | 17 | ~6 |
+
+**3.5× less CPU than the shipped wgpu configuration, 6.5× less than stock, and
+2.4× less memory, at the same frame rate.** That frame rate is *display*-capped
+on this panel, not renderer-capped: tiny-skia leaves ~90 % of a core idle and
+still lands at ~6 fps, so the SPI TFT's own update rate is the ceiling here.
+(§6's 11–12 fps figure was taken on the HDMI box, which is a different ceiling.)
+
+Fidelity on the device: `grim` captures under both renderers of the widget the
+box currently shows (an LCARS clock, not the stock panel) match at **93 % of
+pixels within 16 levels** — the residual is the differing seconds digits and
+text anti-aliasing.
+
+Packaging (chumby-pi): `CHUMBY_RENDERER` ships as an **active line** set to
+tiny-skia, and the launcher passes `--renderer` only when the variable is set,
+so unset still means the player's own default (NFR4). `LP_NUM_THREADS` and
+`CHUMBY_QUALITY` now say they apply to the wgpu path only — tiny-skia loads no
+lavapipe and has no MSAA to skip. Verified end to end by installing the deb: the
+running panel's command line carries `--quality low --renderer tiny-skia`.
+
+Two packaging notes worth keeping:
+
+- **A shipped default only reaches fresh installs.** dpkg keeps a locally
+  modified `/etc/default/chumby-player` (`deploy-pi.sh` passes
+  `--force-confold`), so an upgraded box stays on whatever it had. The test box
+  was found running *neither* `CHUMBY_QUALITY` nor `LP_NUM_THREADS` for exactly
+  this reason — its baseline was the stock 241 % row, not the shipped 129 % one.
+- The repo builds 0.9.1 while that box carried 0.9.2, so the install was a
+  downgrade (`--allow-downgrades`). The version bump is a release decision and
+  was left alone.
 
 ### Step 5 — Fidelity
 
