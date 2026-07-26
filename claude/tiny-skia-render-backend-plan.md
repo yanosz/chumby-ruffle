@@ -56,10 +56,10 @@ planning) with a backend switch, so it produces PNGs from
 against the wgpu reference for shape/bitmap/gradient correctness; note anything
 that visibly needed masks or blends we skipped.
 
-Deferred by Jan (2026-07-26): acceptance testing and his review happen later,
-"when there is something on the screen". Automated tests carry correctness until
-then. This harness also unblocks the measurement in steps 3–4, which needs real
-SWF frames through the backend — so those steps ride behind building 2b.
+Deferred by Jan (2026-07-26), then built the same day when he said to proceed —
+the harness *is* the "something on the screen". Automated tests carry
+correctness; this harness also unblocks the measurement in steps 3–4 (real SWF
+frames through the backend). — **BUILT; awaiting Jan's review** (log below).
 
 ### 3. Desktop timing + CPU sanity gate
 
@@ -147,5 +147,30 @@ directly.
   with nearest sampling; `update_texture` replaces pixels; `name`/viewport
   realloc/`create_context3d`-errors metadata.
 
-The `examples/demo.rs` smoke test (uncommitted) stays as a quick eyeball; the
-real visual pass is 2b.
+The `examples/demo.rs` smoke test stays as a quick eyeball; the real visual
+pass is 2b.
+
+### Step 2b — exporter harness + first eyeball (BUILT, awaiting review)
+
+`exporter/src/bin/tiny_skia_export.rs`: a standalone binary (not the
+wgpu-bound `Exporter` — no GPU adapter needed) that builds a `Player` with
+`TinySkiaRenderBackend`, advances frames, and reads pixels straight from the
+backend's `frame()` Pixmap to PNG. `with_renderer` has no `Send` bound, so the
+`RefCell` handles integrate fine — the Send risk above did not bite.
+Fixtures copied read-only from `/home/jan/chumby_backup/usr/widgets/`.
+
+First eyeball vs. the wgpu (lavapipe) reference, both 320×240:
+- **opening.swf** (~frame 30): faithful — octopus, "chumby" wordmark, AA all
+  match. The tiny ™ superscript is the only near-invisible miss.
+- **controlpanel.swf** (frame 7, boot "Initializing…"): header, octopus glyph
+  and segmented spinner all correct, **but** the large faint octopus watermark
+  (and two ring "eyes") that wgpu shows behind the spinner is **missing**.
+  Most likely the grey overlay is semi-transparent via a **color transform
+  (alpha)** in wgpu — showing the octopus through — while we paint it opaque
+  (color transforms are stubbed). A mask/bitmap-fill cause isn't ruled out; not
+  yet bisected.
+
+Takeaway: the CPU backend renders real panel content correctly; the one visible
+gap traces to the ignored **color-transform alpha** stub. Candidate first
+fidelity fix if the spike proceeds. Harness output lives in the session
+scratchpad (not committed).

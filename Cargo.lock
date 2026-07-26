@@ -1675,6 +1675,7 @@ dependencies = [
  "indicatif",
  "rayon",
  "ruffle_core",
+ "ruffle_render_tiny_skia",
  "ruffle_render_wgpu",
  "walkdir",
 ]
