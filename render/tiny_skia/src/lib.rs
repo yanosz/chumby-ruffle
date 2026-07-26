@@ -560,3 +560,57 @@ impl CommandHandler for TinySkiaRenderBackend {
         commands.execute(self);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use swf::{GradientSpread, Twips};
+
+    fn approx(a: f32, b: f32) -> bool {
+        (a - b).abs() < 1e-3
+    }
+
+    #[test]
+    fn color_maps_channels() {
+        let c = sk_color(&Color::from_rgb(0xFF0000, 255));
+        assert!(approx(c.red(), 1.0));
+        assert!(approx(c.green(), 0.0));
+        assert!(approx(c.blue(), 0.0));
+        assert!(approx(c.alpha(), 1.0));
+    }
+
+    #[test]
+    fn fill_rule_maps() {
+        assert!(matches!(sk_fill_rule(FillRule::EvenOdd), SkFillRule::EvenOdd));
+        assert!(matches!(sk_fill_rule(FillRule::NonZero), SkFillRule::Winding));
+    }
+
+    #[test]
+    fn spread_maps() {
+        assert!(matches!(sk_spread(GradientSpread::Pad), SpreadMode::Pad));
+        assert!(matches!(sk_spread(GradientSpread::Reflect), SpreadMode::Reflect));
+        assert!(matches!(sk_spread(GradientSpread::Repeat), SpreadMode::Repeat));
+    }
+
+    #[test]
+    fn transform_folds_scale_and_twips() {
+        let mut m = Matrix::IDENTITY;
+        m.tx = Twips::from_pixels(10.0); // 200 twips
+        let t = sk_transform(&m, TWIPS_TO_PIXELS);
+        assert!(approx(t.sx, 0.05));
+        assert!(approx(t.sy, 0.05));
+        // 0.05 * 200 twips = 10 device px.
+        assert!(approx(t.tx, 10.0));
+    }
+
+    #[test]
+    fn build_path_some_and_none() {
+        let commands = vec![
+            DrawCommand::MoveTo(swf::Point::new(Twips::new(0), Twips::new(0))),
+            DrawCommand::LineTo(swf::Point::new(Twips::new(100), Twips::new(0))),
+            DrawCommand::LineTo(swf::Point::new(Twips::new(100), Twips::new(100))),
+        ];
+        assert!(build_path(&commands, true).is_some());
+        assert!(build_path(&[], true).is_none());
+    }
+}

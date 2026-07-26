@@ -39,15 +39,27 @@ unsupported.
 
 **Checkpoint**: crate compiles standalone. — **DONE** (see log below).
 
-### 2. Prototype harness
+### 2. Correctness: unit + integration tests
 
-Fork `exporter` (only its renderer-setup lines change, per the trace done
-during planning) with a backend switch, so it produces PNGs from
-`opening.swf`/`controlpanel.swf` the same way it does today with wgpu.
+Lock the backend's behaviour down with deterministic, headless tests before any
+visual/acceptance pass. Unit tests cover the conversion helpers; integration
+tests drive the public API and assert on rendered pixels.
 
-**Checkpoint**: desktop run, eyeball PNGs against the wgpu reference for
-shape/bitmap/gradient correctness; note anything that visibly needed masks or
-blends we skipped.
+**Checkpoint**: `cargo test -p ruffle_render_tiny_skia` green. — **DONE** (log
+below).
+
+### 2b. Visual harness — DEFERRED (acceptance phase)
+
+Fork `exporter` (only its renderer-setup lines change, per the trace done during
+planning) with a backend switch, so it produces PNGs from
+`opening.swf`/`controlpanel.swf` the same way it does today with wgpu; eyeball
+against the wgpu reference for shape/bitmap/gradient correctness; note anything
+that visibly needed masks or blends we skipped.
+
+Deferred by Jan (2026-07-26): acceptance testing and his review happen later,
+"when there is something on the screen". Automated tests carry correctness until
+then. This harness also unblocks the measurement in steps 3–4, which needs real
+SWF frames through the backend — so those steps ride behind building 2b.
 
 ### 3. Desktop timing + CPU sanity gate
 
@@ -116,6 +128,24 @@ the PNG diff isn't a surprise):
 - **Color transforms** ignored (no tint/alpha fade on shapes/bitmaps yet).
 - Offscreen, filters, PixelBender, Context3D → `Unimplemented`/`None`.
 
-Open risk for Step 2 integration (not Step 1): handles use non-`Send`/`Sync`
+Open risk for the harness (2b, not the tests): handles use non-`Send`/`Sync`
 `Arc`/`RefCell`; fine for the crate and a single-threaded harness, may need
 revisiting if the exporter path demands `Send`.
+
+### Step 2 — unit + integration tests (DONE)
+
+`cargo test -p ruffle_render_tiny_skia`: 5 unit + 7 integration, all green.
+Colours are opaque so premultiplied == straight and raw `data()` bytes compare
+directly.
+
+- Unit (`src/lib.rs`): channel mapping (`sk_color`), fill-rule and spread
+  mapping, the twips+scale fold in `sk_transform`, `build_path` some/none.
+- Integration (`tests/render.rs`): clear fills the frame; a solid fill covers
+  its region and nothing outside; a translate repositions the shape; a linear
+  gradient runs cyan→magenta across its bar (exercises the gradient
+  local-matrix ∘ fill-transform composition); a 2×2 bitmap renders by quadrant
+  with nearest sampling; `update_texture` replaces pixels; `name`/viewport
+  realloc/`create_context3d`-errors metadata.
+
+The `examples/demo.rs` smoke test (uncommitted) stays as a quick eyeball; the
+real visual pass is 2b.
