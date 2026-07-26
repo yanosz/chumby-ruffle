@@ -213,3 +213,38 @@ transfer. Their only job is the go/no-go gate. **Verdict: GO to Step 4** — the
 real apples-to-apples comparison is on the 3A+ vs the lavapipe baseline
 (~11–12 fps live; 92 ms/frame offscreen at 320×240). Awaiting Jan's ok to touch
 hardware.
+
+### Step 4 — on-device measurement (DONE)
+
+Box: **192.168.42.51** (Pi **3B+**, quad A53, aarch64 Debian 13) — not the 3A+
+the baseline used, but the same A53 SoC/clock, so comparable. `dist` cross-build
+(`aarch64-unknown-linux-gnu`, reusing the project's existing exporter
+cross-build). `chumby-player` stopped for the run, restarted after.
+
+tiny-skia `render()`, offscreen, **single-threaded**:
+
+| Content | Size | ms/frame | ≈ fps |
+|---|---|---|---|
+| opening.swf | 320×240 | ~1.5 | ~680 |
+| **controlpanel.swf** (37 shapes + 2 masks) | 320×240 | **~3.95** | ~250 |
+
+500-frame panel run: user 2.79 s / wall 2.87 s ⇒ **~1 core** (0.97), confirming
+single-threaded.
+
+**vs. baseline** (wgpu/lavapipe, `development.md` §6): offscreen exporter
+92 ms/frame at 320×240; live shipped ~11–12 fps on **2** lavapipe threads @ 83%.
+
+⇒ tiny-skia renders the panel offscreen at **~4 ms/frame vs lavapipe's ~92** —
+roughly **20× cheaper — on one core instead of two.**
+
+Honest caveats: (a) tiny-skia skips masks/proper bitmap-fills, so it does
+slightly *less* work — but those are cheap clips, nowhere near a 20× gap; (b)
+3B+ vs 3A+ (same SoC); (c) `render()`-only timing isolates rasterisation, which
+was the bottleneck; (d) offscreen, not the live cage — live-player integration
+is exactly what the decision below is about.
+
+**Verdict: strong GO.** The spike's hypothesis holds decisively — bypassing the
+Vulkan-through-software translation is ~20× cheaper on this hardware and frees a
+core. Building the real `submit_frame` + live-player (cage) integration — and
+then masks/bitmap-fills/color-transform for fidelity — is well justified.
+**Awaiting Jan's decision to proceed past the spike.**
