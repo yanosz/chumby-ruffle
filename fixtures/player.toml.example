@@ -1,0 +1,48 @@
+# Player configuration template — copy to player.toml next to this file.
+# Read once at player start; absent file or absent key = the default shown
+# here. Reference: claude-docs/requirements.md FR14/FR15.
+
+# Percent. A scale, not a clamp: the panel's 100% volume maps to this.
+# The backup-alarm Klaxon ignores it.
+volume_cap = 100
+
+# 0/1. A 1 opts this box into chumby.com. It shows the SHOUTcast / blue
+# octy radio / Sleep Sounds music sources (their hosts pass through the
+# navigator), AND — on a box with a stable identity (a hardware serial or
+# device_guid below) — enables device registration and the account's real
+# widget channel: the panel's register wizard, /xml/authorize, chumbies,
+# profiles and widget downloads all reach the live service. Off (default),
+# nothing reaches chumby.com and the panel uses its local generated channel.
+access_chumby_com = 0
+
+# 0/1. A 1 shows the Squeezebox Server music source. The player side
+# works; whether a modern Lyrion server still answers the panel's legacy
+# /stream.mp3 player protocol is unverified.
+enable_lyrion = 0
+
+# Discrete brightness mode. Default (unset): the player looks for a kernel
+# backlight under /sys/class/backlight (rpi_backlight preferred, else a
+# lone device), the panel shows its day/night brightness sliders, and their
+# writes drive the backlight; no backlight found = brightness stays
+# disabled in Settings. Set this to an executable to take over instead:
+# the panel switches to the older models' bright/dim radio view and the
+# program runs with the level as its only argument (0 = on, 1 = dim,
+# 2 = off). Must exist and be executable, or it is ignored.
+# brightness_ctl = "/usr/local/bin/backlight"
+
+# 0/1. Only meaningful on a box using chumby.com channels (registered,
+# access_chumby_com = 1). The original firmware merges the local widgets
+# (/psp/profile.xml, written by chumby-local-widgets) into EVERY channel —
+# including your curated chumby.com channels. Default 0 keeps them out
+# there: local widgets then show only while the box is offline. Set 1 for
+# the stock ride-along merge.
+merge_local_remote_widgets = 0
+
+# Explicit device GUID (8-4-4-4-12) for a box WITHOUT a hardware serial —
+# a dev box, or non-Pi hardware. A Raspberry Pi derives its GUID from the
+# SoC serial and needs nothing here. When set, this becomes the identity
+# the panel presents and, unlike the auto-generated random dev GUID, lets a
+# serial-less box register and use chumby.com (with access_chumby_com = 1).
+# Leave unset to keep such a box offline. Register the chosen UUID on
+# chumby.com the same way as any device.
+# device_guid = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
