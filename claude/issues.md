@@ -97,3 +97,22 @@ The crate logs through the `log` facade while the desktop player installs a
 `tracing_subscriber` registry writing through `tracing_appender::non_blocking`;
 the records land in **`/home/pi/.cache/ruffle/log/ruffle.log`**. `journalctl -u
 chumby-player` shows nothing at all from the player.
+
+---
+
+Number: 3
+Timestamp: 2026-08-20, 22:10
+Title: The built-in clock renders without digits.
+Status: open — reported by Jan at the screen, 2026-08-20
+Description: With no widgets installed the panel falls back to its own
+built-in clock (FR17, the empty-channel -> bi_clock path from #26). On the
+new box — Pi 3B+, Waveshare 5" DSI panel at 1024x600, chumby-player 0.9.3,
+CHUMBY_RENDERER=tiny-skia, CHUMBY_QUALITY=low — the clock shows no digits.
+Not reproduced on the desktop and not narrowed at all yet.
+Two cheap probes first, in this order. (1) `CHUMBY_RENDERER=wgpu` in
+/etc/default/chumby-player, one restart: if the digits appear, this is a
+tiny-skia text/glyph gap and joins issue 2's fidelity findings; if they are
+missing there too, the renderer is not the cause. (2) The geometry: 1024x600
+is the first panel above 640x480 used in this project, so the stage is scaled
+further than on anything tested before — worth checking whether the digits
+come back at a smaller mode.
