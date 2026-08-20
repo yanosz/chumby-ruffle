@@ -131,7 +131,8 @@ separates the remaining causes; that question is CHECKPOINT 2 in the plan.
 Cause (2026-08-20): not the player. The deb's `ruffle_desktop` was built in
 the same cargo invocation as `exporter`, which asks `ruffle_core` for
 `deterministic`; cargo unifies features, so `locale::get_current_date_time()`
-was frozen at 2001-02-03 04:05:06. Frozen seconds mean `BuiltinClock.update()`
+was frozen at 2001-02-03 04:05:06 (and `default_font` with it — the leak
+was two features; see chumby-pi issue 6 for the font consequence). Frozen seconds mean `BuiltinClock.update()`
 runs exactly once — from the constructor, before the digit strips are
 class-linked — so all six `setDigit` calls no-op and the strips stay blank,
 while `clockFormat` is still undefined there and the 24-hour branch clears

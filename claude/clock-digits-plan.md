@@ -92,10 +92,20 @@ and they are one fault, not three:
 
 Not a player bug. The feature came from the build: chumby-pi's workflow
 built the player and the exporter in one cargo invocation, and
-`exporter/Cargo.toml` asks `ruffle_core` for `deterministic`. Cargo unifies
-features across packages built together. Verified with `cargo tree -e
-features -p ruffle_desktop -i ruffle_core` — clean alone, `feature
-"deterministic"` the moment `-p exporter` joins.
+`exporter/Cargo.toml` asks `ruffle_core` for `["deterministic",
+"default_font"]`. Cargo unifies features across packages built together, so
+**both** crossed into the player — `deterministic` is merely the one with a
+visible symptom. Verified by comparing the feature edges of the two
+resolutions (`cargo tree -e features -p ruffle_desktop [-p exporter]`):
+`ruffle_core` is the only shared crate that changes, and it gains exactly
+those two.
+
+The second one has a consequence for this repository: `default_font` embeds
+a fallback font in `ruffle_core`, so while the leak was open the player
+never needed system fonts. Without it, the 8 of 398 `DefineEditText` fields
+that use device fonts fall back to `fontdb`'s `load_system_fonts()` and the
+chains in `desktop/src/player.rs`, which end in DejaVu. That is an
+appliance packaging question (chumby-pi issue 6), not a player change.
 
 ## Step 4 — fix and verify
 
