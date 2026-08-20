@@ -58,6 +58,51 @@ settles it), and SSH access to the box so the panel's own trace can be read
 — `RUST_LOG=…,avm_trace=info` shows whether `BuiltinClock` is constructed
 and what `setDigit` is called with.
 
-## Step 3 — narrow on the device (not started)
+## Step 3 — narrow on the device (done)
 
-## Step 4 — fix and verify (not started)
+`grim` under cage gives a real screenshot (`/dev/fb0` is black — cage holds
+DRM master, fbdev is not a mirror). It showed themonth name reading **February**,
+the colon present and centred, and not one digit anywhere — *steady*, not
+cycling. Steady is the tell: the digit strips have no `stop()` of their own,
+so an unlinked `BuiltinClockDigit` would leave them free-running. They are
+stopped, so the class is linked, `setDigit` exists, and it ran with a value
+that `gotoAndStop(d + 2)` could not use.
+
+The cause is in `core/src/locale.rs`:
+
+```rust
+const MOCK_TIME: bool = cfg!(any(test, feature = "deterministic"));
+// get_current_date_time() -> 2001-02-03 04:05:06 when MOCK_TIME
+```
+
+The deployed player had `deterministic` on, so every `new Date()` in the
+panel returned that constant. It explains all three observations at once,
+and they are one fault, not three:
+
+- **February** — `Date.month_names[getMonth()]`, and the mock month is 1.
+- **no a.m./p.m.** — `update()`'s only run is the one in `BuiltinClock`'s
+  constructor, where `clockFormat` is still undefined (it is assigned in
+  `onEnterFrame`). `undefined == 12` is false, so the 24-hour branch runs
+  and clears the field: `ampm.text = ""`.
+- **no digits** — `getSeconds()` is frozen at 6, so `update()`'s
+  `if (seconds != _lastSeconds)` guard never opens again after that first
+  constructor call. During it the child strips have not yet run their own
+  frame-1 `LinkWithClass`, so the six `setDigit` calls hit an undefined
+  method and no-op. Nothing ever corrects them.
+
+Not a player bug. The feature came from the build: chumby-pi's workflow
+built the player and the exporter in one cargo invocation, and
+`exporter/Cargo.toml` asks `ruffle_core` for `deterministic`. Cargo unifies
+features across packages built together. Verified with `cargo tree -e
+features -p ruffle_desktop -i ruffle_core` — clean alone, `feature
+"deterministic"` the moment `-p exporter` joins.
+
+## Step 4 — fix and verify
+
+Fixed appliance-side (chumby-pi `0049563`, its `claude/issues.md` #6): two
+separate cargo invocations plus a guard step that fails CI if
+`ruffle_desktop` ever resolves `deterministic` again. Nothing in this
+repository needed changing.
+
+Outstanding: a deb built from the fixed workflow, installed on the 5" DSI
+box, showing the real date and six digits.

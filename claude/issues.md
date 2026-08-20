@@ -103,8 +103,8 @@ chumby-player` shows nothing at all from the player.
 Number: 3
 Timestamp: 2026-08-20, 22:10
 Title: The built-in clock renders without digits.
-Status: open — triaged; renderer cleared, at CHECKPOINT 2 (see
-claude/clock-digits-plan.md)
+Status: cause found, fixed in the appliance build (chumby-pi issue 6);
+awaiting a rebuilt deb on the box. Full record: claude/clock-digits-plan.md
 Description: With no widgets installed the panel falls back to its own
 built-in clock (FR17, the empty-channel -> bi_clock path from #26). On the
 new box — Pi 3B+, Waveshare 5" DSI panel at 1024x600, chumby-player 0.9.3,
@@ -127,3 +127,13 @@ discriminating test it looked like. Probe (2) is also answered: the desktop
 player at `--renderer tiny-skia --quality low --width 1024 --height 600`
 draws the clock complete. What the device shows *besides* the digits is what
 separates the remaining causes; that question is CHECKPOINT 2 in the plan.
+
+Cause (2026-08-20): not the player. The deb's `ruffle_desktop` was built in
+the same cargo invocation as `exporter`, which asks `ruffle_core` for
+`deterministic`; cargo unifies features, so `locale::get_current_date_time()`
+was frozen at 2001-02-03 04:05:06. Frozen seconds mean `BuiltinClock.update()`
+runs exactly once — from the constructor, before the digit strips are
+class-linked — so all six `setDigit` calls no-op and the strips stay blank,
+while `clockFormat` is still undefined there and the 24-hour branch clears
+`ampm`. February, no digits and no a.m./p.m. are one fault. Fixed in
+chumby-pi `0049563`.
