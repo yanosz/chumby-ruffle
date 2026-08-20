@@ -103,7 +103,8 @@ chumby-player` shows nothing at all from the player.
 Number: 3
 Timestamp: 2026-08-20, 22:10
 Title: The built-in clock renders without digits.
-Status: open — reported by Jan at the screen, 2026-08-20
+Status: open — triaged; renderer cleared, at CHECKPOINT 2 (see
+claude/clock-digits-plan.md)
 Description: With no widgets installed the panel falls back to its own
 built-in clock (FR17, the empty-channel -> bi_clock path from #26). On the
 new box — Pi 3B+, Waveshare 5" DSI panel at 1024x600, chumby-player 0.9.3,
@@ -116,3 +117,13 @@ missing there too, the renderer is not the cause. (2) The geometry: 1024x600
 is the first panel above 640x480 used in this project, so the stage is scaled
 further than on anything tested before — worth checking whether the digits
 come back at a smaller mode.
+
+Triaged 2026-08-20 (plan and full findings: `claude/clock-digits-plan.md`).
+The digits are not text: each strip is an 11-frame sprite whose frames 2-11
+hold one solid-fill `DefineShape` per digit, in the same colour as the colon
+next to them, and `setDigit(d)` is `gotoAndStop(d + 2)` — so a backend that
+draws the colon cannot fail on the digits, and probe (1) above is not the
+discriminating test it looked like. Probe (2) is also answered: the desktop
+player at `--renderer tiny-skia --quality low --width 1024 --height 600`
+draws the clock complete. What the device shows *besides* the digits is what
+separates the remaining causes; that question is CHECKPOINT 2 in the plan.
