@@ -208,6 +208,11 @@ Two further real-hardware facts from the same session, both about the code
   panel start and never at all on a boot without network. Plain
   `_fileExists`/`getFile`, so it would work unmodified in the fork;
   `fixtures/rootfs/psp/` has no such file.
+  Undone on the real device 2026-08-24 at Jan's request: the file written
+  2026-08-21 (`directurl, shoutcast, chumbcast, sleepcast, mp3files`) was
+  backed up to `/psp/music_order.bak-undone` and removed, so Music is back to
+  the panel's native order there. Restoring it means moving the backup back
+  and restarting the panel.
 
 Method note for future device work: the panel's traces are recoverable from
 real hardware, which is how the log above was taken. `start_control_panel`
