@@ -303,3 +303,31 @@ the intro, advances cleanly at its end, and SWR3 takes over. So the 2 s gate
 is not an automatic loss for a remote stream; it is a race that a healthy
 CDN wins. What it punishes is a slow or unreachable one, and the punishment
 is silent removal rather than an error.
+
+---
+
+Number: 6
+Timestamp: 2026-08-24, 14:50
+Title: _setSystemVolume reaches only mpv, not the player's own audio.
+Status: open — Jan raised the expectation 2026-08-24, no fix designed yet
+Description: The panel's volume slider calls `_setSystemVolume` (ASnative
+5,181). `FixtureHost` intercepts it (`core/src/chumby/fixture.rs`), stores the
+value in `native_state`, writes `/psp/volume`, and calls
+`ChumbyAudio::set_volume` — which is the **mpv** volume and nothing else. So
+the slider governs streams and alarm tones, while the player's own SWF audio
+(UI clicks, widget sounds, the intro) keeps playing at the player's fixed
+volume, and the PipeWire sink is untouched too.
+
+On real hardware that native drove the system mixer, so it governed every
+sound the device made. Jan expects the same ("it should apply to all audio
+sources"), which makes the current behavior narrower than the original.
+
+Candidate fix, undesigned: have the same touchpoint also set Ruffle's own
+player volume (the `--volume` equivalent at runtime), so one slider scales
+both audio paths. Open questions before coding — whether panel space (0-100)
+should map linearly onto the player's 0.0-1.0, whether `_setSystemMute` needs
+the same treatment (it currently mutes mpv only), and whether the appliance
+wants the sink left alone deliberately, since the sink is where an owner sets
+"how loud is loud" (chumby-pi claude-docs/development.md §6 records the 5"
+DSI box's sink at 100 % after Jan found the output weak).
+
