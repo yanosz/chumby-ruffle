@@ -391,3 +391,26 @@ levers `_getPlatform` "ironforge" and `chumby_version -h` "3.8" are
 deliberate (`brightness.rs:5` selects the slider UI from the latter) and not
 part of this class.
 
+---
+
+Number: 8
+Timestamp: 2026-08-27, 09:00
+Title: With no network the local widget channel does not load (since 0.9.4).
+Status: open — needs proper investigation, nothing designed
+Description: On 0.9.4 a box with no network at all shows only the built-in
+clock: the local widget channel (`/psp/profile.xml` plus the local widget
+SWFs) is absent. Connecting a network brings it back immediately and nothing
+is lost on disk — Jan observed both halves on the 5" DSI box, 2026-08-26/27.
+
+Introduced by issue 7: reporting "no network" honestly sets
+`Object._chumby.hasNetwork` false, and that flag gates considerably more than
+the Info screen's display. Its complete set of consumers in the decompiled
+panel is F2:3569, 3704, 3863, 4047, 4149, 4272, 4854, 5335, 7772/7773, 7833 —
+recorded here so the next attempt starts from the list rather than
+rediscovering it on a device.
+
+No remedy is proposed. The trade-off between honest network reporting and a
+local channel that works offline needs investigation before any code, and the
+options considered so far were either too broad or unverifiable without a
+device. Deliberately left open (Jan, 2026-08-27).
+
