@@ -336,3 +336,58 @@ wants the sink left alone deliberately, since the sink is where an owner sets
 "how loud is loud" (chumby-pi claude-docs/development.md §6 records the 5"
 DSI box's sink at 100 % after Jan found the output weak).
 
+---
+
+Number: 7
+Timestamp: 2026-08-26, 17:00
+Title: No network was reported as a fabricated Ethernet page.
+Status: fixed on dev 2026-08-26 — device verification outstanding (Jan)
+Description: With no default route every reader in `real_net.rs` returned
+`None` and the call fell through to `fixtures/exec/`, which answered
+`type="lan" ip="192.168.1.50" gateway="192.168.1.1"`, MAC
+`00:11:22:33:44:55`, and `<wifi connected="1" linkquality="100"
+signalstrength="100"/>`. Jan hit it after taking the 5" DSI box off LAN
+before wifi came up: the Info screen showed an Ethernet at full signal with
+a mock address, and no mention of WLAN. Same lie as the I3 hardcoding
+(chumby-pi memory "status page: derive from live state"), reached through
+the fallback instead of a constant, and in the one state nobody had tested.
+
+The panel already had the protocol and the words for this, which is why the
+fix needed no UI work:
+- `gotNetworkStatus` (F2:294) reads `childrenOfType("error")` inside
+  `<interface>`; any error child sets `Object._chumby.hasNetwork = false`
+  and NO field is copied.
+- `InfoPanel.loadInfo` (F2:27192) wraps type/ssid/ip/netmask/gateway/dns and
+  the `signal_strength` call in `if (hasNetwork)`, with an `else` that prints
+  the translated **"network: not connected"** (F2:27253).
+
+Fix: the three network touchpoints now always answer from code and can no
+longer reach a fixture — `NO_NETWORK`
+(`<network><interface><error/></interface></network>`) when there is no
+connected interface, `NO_WIFI` (`<wifi connected="0"/>`) with no route or a
+wired one. `macgen.sh` no longer depends on a route at all (the Info screen
+prints the MAC outside the has-network branch, so a fake would sit right
+above "not connected"): default-route interface first, else the first
+non-loopback interface with a non-zero address, else an empty line. Their
+three fixture files and manifest lines are deleted, so no path can serve
+them; `desktop/src/main.rs:194` is the only host construction site and
+always wraps `FixtureHost`, so nothing else consumed them.
+
+Why the fixture files could not be the fix on their own:
+`chumby-player-run:135` seeds `$STATE/fixtures` only `if [ ! -d ]`, so an
+upgrade never replaces an existing tree — an owner's box (Jan's, seeded
+2026-08-24) would have kept the lying XML.
+
+Tests: `network_xml` for wired and for wireless (ssid escaping included),
+the no-network answer against the panel's error protocol, and `mac()`
+asserted never to be the old fixture value. The no-network test fails
+against the previous code, which was the point.
+
+Not fixed here, same class, recorded for the audit: `chumby_version -s`
+(1.7.2) and `-f` (1830) are canned values shown on the Info screen with no
+real source; `_headphonesIn`, `_dcVolts`, `_powerSource` and
+`_accelerometer` answer with literal constants (`fixture.rs:160-171`). The
+levers `_getPlatform` "ironforge" and `chumby_version -h` "3.8" are
+deliberate (`brightness.rs:5` selects the slider UI from the latter) and not
+part of this class.
+

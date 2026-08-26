@@ -1,1 +1,0 @@
-<network><configuration type="lan" ssid="" auth="" encryption=""/><interface ip="192.168.1.50" netmask="255.255.255.0" gateway="192.168.1.1" nameserver1="192.168.1.1" nameserver2=""/></network>

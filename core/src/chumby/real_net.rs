@@ -55,26 +55,14 @@ impl RealNetHost {
     /// stay empty: the panel renders a bare ssid line for any auth value it
     /// does not recognize, and reading the security mode would need nl80211
     /// for a purely decorative suffix.
-    /// `None` when no interface is connected → caller falls back to the fixture.
-    fn network_status_xml(&self) -> Option<String> {
-        read_primary_interface().map(|n| {
-            let (net_type, ssid) = if n.wireless {
-                ("wlan", essid(&n.iface).unwrap_or_default())
-            } else {
-                ("lan", String::new())
-            };
-            format!(
-                "<network><configuration type=\"{}\" ssid=\"{}\" auth=\"\" encryption=\"\"/>\
-                 <interface ip=\"{}\" netmask=\"{}\" gateway=\"{}\" nameserver1=\"{}\" nameserver2=\"{}\"/></network>",
-                net_type,
-                xml_escape(&ssid),
-                n.ip,
-                n.netmask,
-                n.gateway,
-                n.dns1,
-                n.dns2
-            )
-        })
+    /// With no interface connected the answer is `NO_NETWORK`, never a
+    /// fixture: a fabricated LAN page is a lie the owner reads as fact
+    /// (Jan, 2026-08-26).
+    fn network_status_xml(&self) -> String {
+        match read_primary_interface() {
+            Some(n) => network_xml(&n, essid(&n.iface).unwrap_or_default()),
+            None => NO_NETWORK.to_owned(),
+        }
     }
 
     /// Drives the dashboard `WifiIndicator` (bars = `(linkquality − 50) × 2`,
@@ -82,17 +70,15 @@ impl RealNetHost {
     /// line. On a wired link the answer is `connected="0"`: the meter is a
     /// wifi meter — the SWF has no ethernet vocabulary — so it hides, and the
     /// wired diagnostics live on the Info screen (user 2026-07-10, replacing
-    /// the I3 blue-tint repurposing). `None` (no route) → fixture fallback.
-    fn signal_strength_xml(&self) -> Option<String> {
-        let (iface, _) = default_route()?;
-        let wifi = if is_wireless(&iface) {
+    /// the I3 blue-tint repurposing). No route, or a wired one, answers
+    /// `connected="0"` — again never a fixture.
+    fn signal_strength_xml(&self) -> String {
+        let wifi = default_route().map(|(iface, _)| iface).filter(|i| is_wireless(i)).and_then(|iface| {
             std::fs::read_to_string("/proc/net/wireless")
                 .ok()
                 .and_then(|t| parse_proc_wireless(&t, &iface))
-        } else {
-            None
-        };
-        Some(match wifi {
+        });
+        match wifi {
             Some((quality, dbm, noise)) => {
                 // −256 is the "no noise data" sentinel (brcmfmac on the Pi);
                 // the Info screen would print it as a nonsense dBm number.
@@ -105,13 +91,8 @@ impl RealNetHost {
                     "<wifi connected=\"1\" linkquality=\"{quality}\" signalstrength=\"{dbm}\" noiselevel=\"{noise}\"/>"
                 )
             }
-            None => "<wifi connected=\"0\"/>".to_owned(),
-        })
-    }
-
-    fn mac(&self) -> Option<String> {
-        let iface = default_route()?.0;
-        Some(std::fs::read_to_string(format!("/sys/class/net/{iface}/address")).ok()?.trim().to_owned())
+            None => NO_WIFI.to_owned(),
+        }
     }
 }
 
@@ -121,13 +102,18 @@ impl ChumbyHost for RealNetHost {
     }
 
     fn exec(&self, command: &str) -> Result<Vec<u8>, HostError> {
-        let real = if command.starts_with("network_status.sh") {
-            self.network_status_xml()
-        } else if command.starts_with("signal_strength") {
-            self.signal_strength_xml()
-        } else if command.starts_with("macgen.sh") {
-            self.mac().map(|m| format!("{m}\n"))
-        } else if command.starts_with("guidgen.sh") {
+        // These three never fall through: their fixtures were deleted with
+        // this change, because a canned network page or MAC reads as fact.
+        if command.starts_with("network_status.sh") {
+            return Ok(self.network_status_xml().into_bytes());
+        }
+        if command.starts_with("signal_strength") {
+            return Ok(self.signal_strength_xml().into_bytes());
+        }
+        if command.starts_with("macgen.sh") {
+            return Ok(format!("{}\n", mac()).into_bytes());
+        }
+        let real = if command.starts_with("guidgen.sh") {
             // Device identity (real_ident.rs): the crypto processor's job.
             // Priority: player.toml device_guid, else serial-derived, else a
             // per-box random GUID persisted as /psp/guid.
@@ -166,6 +152,52 @@ impl ChumbyHost for RealNetHost {
     fn brightness_available(&self) -> bool {
         self.inner.brightness_available()
     }
+}
+
+/// The panel's own "no network" protocol: an `<error/>` child inside
+/// `<interface>` clears `Object._chumby.hasNetwork` (frame_2
+/// `gotNetworkStatus`), and the Info screen then prints its translated
+/// "network: not connected" line instead of any interface field.
+const NO_NETWORK: &str = "<network><interface><error/></interface></network>";
+/// `connected="0"` hides the dashboard's wifi meter and the link-quality line.
+const NO_WIFI: &str = "<wifi connected=\"0\"/>";
+
+/// The `<network>` XML for a connected interface.
+fn network_xml(n: &NetInfo, ssid: String) -> String {
+    let (net_type, ssid) = if n.wireless { ("wlan", ssid) } else { ("lan", String::new()) };
+    format!(
+        "<network><configuration type=\"{}\" ssid=\"{}\" auth=\"\" encryption=\"\"/>\
+         <interface ip=\"{}\" netmask=\"{}\" gateway=\"{}\" nameserver1=\"{}\" nameserver2=\"{}\"/></network>",
+        net_type, xml_escape(&ssid), n.ip, n.netmask, n.gateway, n.dns1, n.dns2
+    )
+}
+
+/// The Info screen prints the MAC outside its has-network branch, so this
+/// must answer without a route: the default-route interface if there is one,
+/// else the first non-loopback interface carrying a MAC. Empty string when
+/// the machine has none — an empty line beats an invented address.
+fn mac() -> String {
+    if let Some((iface, _)) = default_route() {
+        if let Some(m) = read_mac(&iface) {
+            return m;
+        }
+    }
+    let mut candidates: Vec<String> = std::fs::read_dir("/sys/class/net")
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n != "lo")
+        .collect();
+    candidates.sort();
+    candidates.iter().find_map(|iface| read_mac(iface)).unwrap_or_default()
+}
+
+/// A non-empty, non-all-zero MAC for `iface`.
+fn read_mac(iface: &str) -> Option<String> {
+    let addr = std::fs::read_to_string(format!("/sys/class/net/{iface}/address")).ok()?;
+    let addr = addr.trim().to_owned();
+    (!addr.is_empty() && addr != "00:00:00:00:00:00").then_some(addr)
 }
 
 fn read_primary_interface() -> Option<NetInfo> {
@@ -381,5 +413,60 @@ Inter-| sta-|   Quality        |   Discarded packets               | Missed | WE
     #[test]
     fn test_xml_escape() {
         assert_eq!(xml_escape(r#"a&b<c>"d""#), "a&amp;b&lt;c&gt;&quot;d&quot;");
+    }
+
+    fn wired() -> NetInfo {
+        NetInfo {
+            iface: "eth0".into(),
+            wireless: false,
+            ip: "192.168.210.147".into(),
+            netmask: "255.255.255.0".into(),
+            gateway: "192.168.210.1".into(),
+            dns1: "192.168.210.1".into(),
+            dns2: String::new(),
+        }
+    }
+
+    /// The three states of the Info screen's network page. The no-network one
+    /// is the case that used to fall through to a fixture and show a
+    /// fabricated Ethernet at 192.168.1.50 (chumby-pi claude/issues.md).
+    #[test]
+    fn test_network_xml_wired_reports_lan() {
+        let xml = network_xml(&wired(), String::new());
+        assert!(xml.contains(r#"type="lan""#), "{xml}");
+        assert!(xml.contains(r#"ip="192.168.210.147""#), "{xml}");
+        assert!(!xml.contains("<error"), "{xml}");
+    }
+
+    #[test]
+    fn test_network_xml_wireless_carries_the_ssid() {
+        let mut n = wired();
+        n.iface = "wlan0".into();
+        n.wireless = true;
+        let xml = network_xml(&n, "LXC & co".into());
+        assert!(xml.contains(r#"type="wlan""#), "{xml}");
+        assert!(xml.contains(r#"ssid="LXC &amp; co""#), "{xml}");
+    }
+
+    #[test]
+    fn test_no_network_answer_is_the_panels_error_protocol() {
+        // <error/> inside <interface> is what clears hasNetwork (frame_2
+        // gotNetworkStatus); the Info screen then prints "network: not
+        // connected". No address, no type, no MAC may appear.
+        assert!(NO_NETWORK.contains("<interface><error/></interface>"));
+        assert!(!NO_NETWORK.contains("ip="));
+        assert!(!NO_NETWORK.contains("type="));
+        assert_eq!(NO_WIFI, r#"<wifi connected="0"/>"#);
+    }
+
+    /// A MAC exists whether or not the machine has a route, so this must
+    /// answer on any box with an interface — never the old 00:11:22:33:44:55.
+    #[test]
+    fn test_mac_is_read_from_the_system_or_empty() {
+        let m = mac();
+        assert_ne!(m, "00:11:22:33:44:55");
+        if !m.is_empty() {
+            assert_eq!(m.split(':').count(), 6, "{m}");
+        }
     }
 }
