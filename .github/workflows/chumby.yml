@@ -1,0 +1,95 @@
+name: Chumby
+
+# Chumby-fork CI (chumby-pi BC3): the build must pass (the chumby code
+# is always compiled since BC4a removed the cargo feature), and the
+# built player must actually START the movie — a clean compile can
+# still break the ASnative hooks, so the test is "controlpanel.swf runs
+# and executes chumby host calls".
+#
+# controlpanel.swf is copyrighted chumby firmware and lives only on a
+# private Nextcloud share (CI user); the workflow fetches it with rclone
+# configured purely through RCLONE_CONFIG_RSHARE_* Actions secrets.
+# Nothing copyrighted is committed, cached, or uploaded as an artifact.
+#
+# Fixtures are in-repo. The tracked tree deliberately lacks the
+# (gitignored, copyrighted) widget SWFs — the panel still boots without
+# them; the widget load fails with a non-fatal FetchError.
+
+on:
+  push:
+    branches: [chumby]
+  pull_request:
+    branches: [chumby]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# On a pull request the job builds and stops there. Starting the movie needs
+# controlpanel.swf, which is copyrighted and lives on a private share — so the
+# full check runs on push to `chumby` (i.e. after the squash-merge) and on
+# manual dispatch. A PR proves it compiles; `chumby` proves it runs.
+
+jobs:
+  start-movie:
+    name: Build (and, off pull requests, start controlpanel.swf)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libasound2-dev libudev-dev libfontconfig-dev \
+            mesa-vulkan-drivers libgl1-mesa-dri xvfb libxkbcommon-x11-0 \
+            fonts-dejavu-core rclone
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build ruffle_desktop
+        run: cargo build -p ruffle_desktop
+
+      # Only URL/USER/PASS are secrets; type and vendor reveal nothing.
+      - name: Fetch controlpanel.swf from the private share
+        if: github.event_name != 'pull_request'
+        env:
+          RCLONE_CONFIG_RSHARE_TYPE: webdav
+          RCLONE_CONFIG_RSHARE_VENDOR: nextcloud
+          RCLONE_CONFIG_RSHARE_URL: ${{ secrets.RCLONE_CONFIG_RSHARE_URL }}
+          RCLONE_CONFIG_RSHARE_USER: ${{ secrets.RCLONE_CONFIG_RSHARE_USER }}
+          RCLONE_CONFIG_RSHARE_PASS: ${{ secrets.RCLONE_CONFIG_RSHARE_PASS }}
+        run: |
+          rclone copy rshare:testdata/controlpanel.swf swf-assets/
+          test -f swf-assets/controlpanel.swf
+
+      - name: Start the movie headless
+        if: github.event_name != 'pull_request'
+        env:
+          RUST_LOG: warn,chumby_host=info,avm_trace=info
+        run: |
+          # timeout exit 124 is the SUCCESS path: the player was still
+          # running (movie started, no crash/panic) when time ran out.
+          set +e
+          xvfb-run -a timeout 45 ./target/debug/ruffle_desktop \
+            --load-behavior blocking --filesystem-access-mode allow \
+            --chumby-fixtures fixtures \
+            --width 640 --height 480 -PlocalCache=1 \
+            swf-assets/controlpanel.swf > run.log 2>&1
+          status=$?
+          set -e
+          echo "player exit status: $status (124 = alive at timeout, expected)"
+          tail -n 80 run.log
+          test "$status" -eq 124
+
+      - name: Assert the panel executed chumby host calls
+        if: github.event_name != 'pull_request'
+        run: |
+          grep -q '_getPlatform' run.log
+          if grep -q 'panicked' run.log; then
+            echo "panic found in player log" >&2
+            exit 1
+          fi
