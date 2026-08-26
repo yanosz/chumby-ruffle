@@ -21,6 +21,12 @@ pub fn asnative<'gc>(
     let category: Option<TableNativeFunction> = match category {
         2 => Some(asnew_method),
         4 => Some(as_set_native_method),
+        // Chumby hardware/system extensions (chumby-pi project); the
+        // per-index reference lives in this repo's README.
+        // Chumby firmware also defined ASnative(4,39) `_batteryPower`, which
+        // collides with category 4 above; the control panel never calls it,
+        // so category 4 stays untouched.
+        5 => Some(crate::chumby::avm::method),
         100 => Some(globals::method),
         101 => Some(globals::object::method),
         103 => Some(globals::date::method),
