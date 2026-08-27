@@ -15,6 +15,7 @@ clap = { workspace = true }
 futures = { workspace = true }
 ruffle_core = { path = "../core", features = ["deterministic", "default_font"] }
 ruffle_render_wgpu = { path = "../render/wgpu", features = ["clap"] }
+ruffle_render_tiny_skia = { path = "../render/tiny_skia" }
 image = { workspace = true, features = ["png"] }
 walkdir = { workspace = true }
 indicatif = { workspace = true }
