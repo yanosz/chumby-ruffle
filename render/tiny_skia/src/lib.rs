@@ -25,6 +25,7 @@ use ruffle_render::bitmap::{
 };
 use ruffle_render::commands::{CommandHandler, CommandList, RenderBlendMode};
 use ruffle_render::error::Error;
+use ruffle_render::lines::emulate_line_rect;
 use ruffle_render::matrix::Matrix;
 use ruffle_render::pixel_bender::{PixelBenderShader, PixelBenderShaderHandle};
 use ruffle_render::pixel_bender_support::PixelBenderShaderArgument;
@@ -329,12 +330,13 @@ fn gradient_stops(gradient: &Gradient, ctx: &ColorTransform) -> Vec<GradientStop
         .collect()
 }
 
-/// `draw_rect` / `draw_line` / `draw_line_rect` supply a *unit* square or line,
-/// and `Matrix::create_box` puts the size in the linear part **in pixels** while
-/// the translation stays in twips. Only the translation may be converted here —
-/// scaling the whole matrix (as shape paths, which are in twips, require) shrinks
-/// these by 20x. Text fields with a `scrollRect` are masked this way, so the bug
-/// hid a mask down to a few pixels and clipped the text away entirely.
+/// `draw_rect` and `draw_line` supply a *unit* square or line, and
+/// `Matrix::create_box` puts the size in the linear part **in pixels** while the
+/// translation stays in twips. Only the translation may be converted here —
+/// scaling the whole matrix (as shape paths, which are in twips, require)
+/// shrinks these by 20x. Text fields with a `scrollRect` are masked this way,
+/// so the bug hid a mask down to a few pixels and clipped the text away
+/// entirely.
 fn sk_transform_unit(matrix: &Matrix) -> SkTransform {
     SkTransform::from_row(
         matrix.a,
@@ -491,7 +493,7 @@ fn build_path(commands: &[DrawCommand], is_closed: bool) -> Option<Path> {
     builder.finish()
 }
 
-/// A unit box (0,0)-(1,1) for `draw_rect` / `draw_line_rect`.
+/// A unit box (0,0)-(1,1) for `draw_rect`.
 fn unit_rect() -> Option<Path> {
     let mut builder = PathBuilder::new();
     builder.move_to(0.0, 0.0);
@@ -851,6 +853,7 @@ impl CommandHandler for TinySkiaRenderBackend {
     }
 
     fn draw_line(&mut self, color: Color, matrix: Matrix) {
+        self.stats.lines += 1;
         if self.masks.defining() {
             return;
         }
@@ -873,24 +876,17 @@ impl CommandHandler for TinySkiaRenderBackend {
         );
     }
 
+    /// A border is 1 device pixel thick and must not be transformed
+    /// (`edit_text.rs`: "always 1px regardless of zoom and transform"), but
+    /// tiny-skia strokes in path space and transforms afterwards, and this
+    /// matrix carries the box's *size* in its linear part. Stroking the unit
+    /// square therefore scaled the border by the box dimensions — the alarm
+    /// wizard's name field came out as a filled black band. `emulate_line_rect`
+    /// builds the four 1px rects from already-transformed corners, as wgpu does
+    /// when its adapter has no line primitive.
     fn draw_line_rect(&mut self, color: Color, matrix: Matrix) {
-        if self.masks.defining() {
-            return;
-        }
-        let Some(path) = unit_rect() else { return };
-        let paint = Paint {
-            shader: Shader::SolidColor(sk_color(&color)),
-            anti_alias: true,
-            ..Default::default()
-        };
-        let transform = sk_transform_unit(&matrix);
-        let _ = self.frame.as_mut().stroke_path(
-            &path,
-            &paint,
-            &Stroke::default(),
-            transform,
-            self.masks.clip(),
-        );
+        self.stats.lines += 1;
+        emulate_line_rect(self, color, matrix);
     }
 
     fn push_mask(&mut self) {

@@ -426,3 +426,27 @@ fn focal_offset_moves_the_gradient_centre() {
         "focal centre should sit right of the plain one: focal={focal} plain={plain}"
     );
 }
+
+/// An `EditText` border (`edit_text.rs` `draw_text_box`) arrives as a unit
+/// square whose matrix carries the box size. Stroking that path scales the
+/// 1px border by the box dimensions, which filled the alarm wizard's name
+/// field with solid black.
+#[test]
+fn line_rect_border_stays_one_pixel_thick() {
+    let mut backend = TinySkiaRenderBackend::new(64, 32);
+    let mut commands = CommandList::new();
+    commands.draw_line_rect(
+        Color::BLACK,
+        Matrix::create_box(48.0, 12.0, Twips::from_pixels(4.0), Twips::from_pixels(8.0)),
+    );
+    backend.submit_frame(Color::WHITE, commands, Vec::new());
+
+    let frame = backend.frame();
+    assert_eq!(px(frame, 30, 8), [0, 0, 0, 255], "top edge should be drawn");
+    assert_eq!(px(frame, 30, 20), [0, 0, 0, 255], "bottom edge should be drawn");
+    assert_eq!(px(frame, 4, 14), [0, 0, 0, 255], "left edge should be drawn");
+    assert_eq!(px(frame, 30, 14), [255, 255, 255, 255], "interior must stay clear");
+    assert_eq!(px(frame, 5, 14), [255, 255, 255, 255], "interior must stay clear");
+    assert_eq!(px(frame, 30, 6), [255, 255, 255, 255], "above the box must stay clear");
+    assert_eq!(px(frame, 60, 14), [255, 255, 255, 255], "right of the box must stay clear");
+}

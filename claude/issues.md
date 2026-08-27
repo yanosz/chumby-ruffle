@@ -414,3 +414,62 @@ local channel that works offline needs investigation before any code, and the
 options considered so far were either too broad or unverifiable without a
 device. Deliberately left open (Jan, 2026-08-27).
 
+
+---
+
+Number: 9
+Timestamp: 2026-08-27, 20:15
+Title: tiny-skia painted every `EditText` border as a filled black box.
+Status: closed — fixed and verified on the desktop, both renderers, 2026-08-27
+Description: Jan, at the 5" DSI box: the custom-alarm wizard's "Name this
+alarm" step shows a black box where the name field should be. Reproduced on
+the desktop with the same build: `--renderer tiny-skia` draws a black band
+across the full stage width, ~85 px tall, swallowing the field and the CLEAR
+button beside it; `--renderer wgpu` draws the field correctly. The appliance
+runs tiny-skia (`CHUMBY_RENDERER`), the desktop defaults to wgpu
+(`cli.rs:158`), which is why it never showed here.
+
+Cause: the field is `DefineEditText` chid 1102 (`textStr` in
+`DefineSprite_1104` = `AlarmPanelSetName`), flags `05 29` — `Border=1`,
+`UseOutlines=1`. So the core takes `EditText::draw_text_box` and emits
+`draw_line_rect` for the border (`edit_text.rs:2956`) with
+`Matrix::create_box(width, height, …)`, which carries the box *size* in the
+matrix's linear part. The backend stroked a unit square with
+`Stroke::default()` (width 1.0) under that matrix, and tiny-skia strokes in
+path space and transforms afterwards (`painter.rs:433`: `path.stroke(…)` then
+`fill_path(…, transform, …)`). The 1 px border was therefore multiplied by the
+box dimensions: at 2x viewport scale the ~228x22 field yields ~456 px-thick
+vertical edges and ~44 px-thick horizontal ones — full stage width, ~88 px
+tall, matching the observed band.
+
+Flash's rule is the opposite, and upstream states it at `edit_text.rs:2850`:
+"line width of the border is always 1px regardless of zoom and transform."
+wgpu obeys it with a hardware line primitive and, where the adapter has none,
+falls back to `ruffle_render::lines::emulate_line_rect`
+(`wgpu/src/surface/commands.rs:875`) — a backend-independent helper that
+builds four 1 px rects from already-transformed corners. The fix routes our
+`draw_line_rect` through the same helper; it lands on our `draw_rect`, which
+was already correct. `render/tiny_skia/tests/render.rs`
+(`line_rect_border_stays_one_pixel_thick`) pins a 1 px frame with a clear
+interior, and fails against the old code.
+
+Consumer list — every bordered `EditText` in the panel. All 398
+`DefineEditText` tags were decoded; exactly five carry `Border=1`, and all
+five have identical `hasFont=1 / useOutlines=1`, so all five take the same
+`draw_text_box` → `draw_line_rect` path:
+
+| chid | screen | verdict |
+|---|---|---|
+| 1102 | `AlarmPanelSetName` — "Name this alarm" | the report; verified fixed on screen, and live (typing updates the text inside a 1 px frame) |
+| 549 | `ssidEntry` / WEP-key keypad in `DefineSprite_552` | verified fixed on screen ("Enter name of access point"); reachable only with the `settings-network` ui-policy rule lifted, which was a throwaway probe build, since reverted |
+| 597 | `IPEntry` (`DefineSprite_598`) | verified fixed on screen via `SlimServerPanel` (chid 1233), reached with `enable_lyrion = 1`; its other host, the manual-IP frames of `DefineSprite_612`, needs a real association and stays unreachable |
+| 1275, 1276 | `MP3tunesPanelLogin` account/password | same flags, same code path; the screen needs chumby.com and was not reached |
+
+`draw_line` was examined and left alone. Its callers put the line's thickness
+on an axis the matrix scales by 1.0 — `create_box(width, 1.0, …)` for the
+horizontal edges, and `create_box_with_rotation(1.0, height, PI/2, …)` for the
+vertical ones, where the rotation moves the thickness onto the `1.0` axis
+(`edit_text.rs:2874-2905`, `render_underline` at 1367) — so it never produced
+the artifact. It does differ from wgpu by the half-pixel offset wgpu adds
+(`commands.rs:862`); switching it to `emulate_line` would settle that too, but
+that is a separate call and nothing is known to be broken by it.
