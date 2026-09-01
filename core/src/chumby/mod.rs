@@ -23,6 +23,7 @@
 //! - `ui_policy`: declarative dim/disable of panel controls the host
 //!   platform does not support (rules compiled in from `ui-policy.toml`)
 
+pub mod alarm_guard;
 pub mod audio;
 pub mod avm;
 pub mod backup_alarm;

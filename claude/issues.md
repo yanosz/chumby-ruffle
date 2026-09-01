@@ -473,3 +473,81 @@ vertical ones, where the rotation moves the thickness onto the `1.0` axis
 the artifact. It does differ from wgpu by the half-pixel offset wgpu adds
 (`commands.rs:862`); switching it to `emulate_line` would settle that too, but
 that is a separate call and nothing is known to be broken by it.
+
+---
+
+Number: 10
+Timestamp: 2026-09-01, 11:00
+Title: A silent alarm cancelled a sounding one — deliberate deviation from stock.
+Status: fixed on dev 2026-09-01, A/B-verified on the desktop; device
+verification outstanding (chumby-pi issue 13).
+Description: `Alarm.ringAlarm` (F2:11178) opens with
+`_alarmSet.stopAlarmsExcept(this)`, and `stopAlarmsExcept` (F2:12039) calls
+`stopAlarm(true)` on every *other* ringing alarm. An alarm with `type="none"`
+(`Alarm.TYPE_NONE`, F2:10170) makes no sound at all — its whole ringAlarm
+branch is `doPreAction` → `stopAlarm(false)` (F2:11187-11191), the shape a
+nightmode alarm has — yet it runs that cancel first. Two alarms a minute
+apart and the silent one wins: on chumby-pi-3 a `"Daily at 8:00"` nightmode
+alarm killed a stream alarm that had been ringing since 07:59 (measured on
+the device 2026-09-01, full evidence in chumby-pi `claude/issues.md` #13).
+
+The guard exists to keep two *sounding* alarms from overlapping. An alarm
+that makes no sound has nothing to protect, so `alarm_guard.rs` wraps
+`AlarmSet.prototype.stopAlarmsExcept` — one-shot with retry until frame 2
+defines it, the original parked at `__chumby_stopAlarmsExcept`, surgery
+precedent `empty_channel.rs`. When the argument's `_type` is `"none"` the
+wrapper logs and returns; every other call delegates unchanged. Wired at
+`avm.rs` beside the other one-shots. **No upstream file is touched, so
+`patch-surface.md` is unchanged.**
+
+Wrapped here rather than at the `ringAlarm` call site because the ringing
+alarm passes *itself* as `anAlarm` — canceller and survivor are the same
+object on the only reachable path — while wrapping `ringAlarm` would mean
+either reimplementing its 50-line body or shadowing `stopAlarmsExcept` with
+a no-op and restoring it, where a missed restore disables cancelling for
+every alarm. Consumer list for `stopAlarmsExcept`, all four sites: F2:11182
+`Alarm.ringAlarm(this)` — the path that bites; F2:12033 `AlarmSet.step`'s
+periodic reload, F2:12238 and F2:12244 `AlarmSet.gotEvent` — all pass
+`undefined` (so they fail the `_type` test anyway) and are unreachable on our
+stack, the reload interval being `ONE_YEAR` without the `alarmReloadInterval`
+FlashVar (F2:11784) and `ExtendedEvents.AlarmPlayer` (F2:12182) never driven.
+Outside the decompile there is no consumer: the fork's Rust names `AlarmSet`
+only in two `fixture.rs` comments about the backup-alarm exec protocol.
+
+**This is a deliberate deviation from stock chumby behaviour**, chosen by Jan
+over the configuration-only workaround (move the nightmode alarm out of the
+wake alarm's ring window) and over leaving it alone. Nothing else in the
+silent alarm's ring changes: night mode off, widget mode, the
+`post_alarm_action` probes, its own `stopAlarm` and `saveAlarms` all still
+run.
+
+Verified on the desktop, same binary with the guard compiled out and in, two
+`when="once"` alarms a minute apart — the earlier `type="beep"
+auto_dismiss="0"`, the later `type="none" action="nightmode"
+auto_dismiss="1"`:
+
+    guard off  10:37:00.036  AlarmSet.stopAlarmsExcept(): cancelling … 10:36 am
+               10:37:00.037  Alarm.stopAlarm() … 10:36 am isCancel:true
+               10:37:00.037  Alarm.restoreSoundSettings(): volume:60
+    guard on   10:41:00.043  silent alarm "Daily at 8:00" rang — not cancelling
+               10:41:00.044  Alarm.doPrePostAction(): night mode off
+               10:41:00.046  Alarm.restoreDisplay():  - alarm still playing,
+                             continuing
+
+With the guard the surviving alarm is never mentioned again after it rings,
+and the panel's own `restoreDisplay` acknowledges it — stock code already
+handles a survivor correctly.
+
+Side effect examined and dismissed: without the cancel, `_alarmRefCount` ends
+at 0 rather than −1. That counter is written at four sites (F2:11783 init,
+12057 `++`, 12062 `--`, 12068 snooze) and **never read as a condition**
+anywhere in the decompile; its only consumers are the three `trace()` strings
+that print it. It is already asymmetric on stock — `Alarm.ringAlarm` calls
+`_alarmSet.ringAlarm` only on the two sounding branches (F2:11203, 11225)
+while `Alarm.stopAlarm` (F2:10994) decrements unconditionally — so a silent
+alarm drives it negative on a real chumby too.
+
+Also observed and not part of this fix: the cancel used to run
+`Alarm.restoreSoundSettings()`, which is why a manual restart after a
+cancelled alarm played at the pre-alarm volume (44 → 16 on the device). Moot
+now for silent cancellers.

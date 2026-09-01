@@ -82,6 +82,8 @@ pub fn method<'gc>(
     super::intro::apply(activation);
     // One-shot: an empty widget channel shows the built-in clock, not black.
     super::empty_channel::apply(activation);
+    // One-shot: a silent (type="none") alarm must not cancel a sounding one.
+    super::alarm_guard::apply(activation);
 
     let result = dispatch(activation, index, name, args, &host_args)?;
 
