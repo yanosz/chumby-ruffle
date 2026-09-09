@@ -1,0 +1,17 @@
+# fixtures-dash — the Sony Dash panel's answer corpus
+
+The Dash panel (`claude/dash-panel-survey.md`) gets its own tree because
+the two panels write different things into the same `/psp` names —
+the Dash rewrites `/psp/alarms` in its own schema at first start — and
+because the classic tree's `/tmp/nightmode` puts the Dash straight into
+night mode. Same layout and rules as `fixtures/` (see its README):
+`rootfs/` is the virtual filesystem, `exec/manifest.txt` the command
+answers, `http/` the chumby.com answers, keyed by the panel's own request
+strings; a `MISSING` line in the log names the file to add.
+
+Launcher: `./run-dash.sh` (repo root). It expects the panel at
+`swf-assets/dash/controlpanel.swf` and links
+`swf-assets/dash/default_theme.swf` to `rootfs/psp/theme.swf` (both
+chumby's, both gitignored). `/psp/securityQuestion` and
+`/psp/securityAnswer` exist only so the startup wizard's
+`needStartNetwork()` is false; their content is never checked offline.

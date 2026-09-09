@@ -78,6 +78,8 @@ Around the fork, at the repo root:
 | path | role |
 |------|------|
 | `fixtures/` | what the panel is answered with — `rootfs/`, `exec/`, `http/`, `widgets/` |
+| `fixtures-dash/` | the same for the Sony Dash panel — its own tree, because the two panels write different things under the same `/psp` names (`fixtures-dash/README.md`) |
+| `run-dash.sh` | the Dash panel against `fixtures-dash/`, 860x480 |
 | `swf-assets/` | `controlpanel.swf` goes here; self-ignoring, you supply it |
 | `run-controlpanel.sh` | the desktop run |
 | `verify-screens.sh` | drives the panel to named screens and screenshots them |
@@ -161,6 +163,18 @@ echo "drag 100 200 300 200" > /tmp/chumby-ctl
 
 `./verify-screens.sh` walks the panel to the alarms, My Streams and volume
 screens and screenshots each into `claude-docs/images/`.
+
+### The Dash panel
+
+`./run-dash.sh` runs the Sony Dash panel (`claude/dash-panel-survey.md`)
+against `fixtures-dash/`; it wants `swf-assets/dash/controlpanel.swf` and
+`swf-assets/dash/default_theme.swf` from the chumby-hidc10 package. Offline
+it reaches its home screen with the Space Theme on the classic `authorize`
+answer plus two `/psp` files (`securityQuestion`, `securityAnswer`) that
+keep the startup wizard away; the `builtin=1` FlashVar the classic uses
+offline makes the Dash *quit* instead (fork issue 12). Channels and widgets
+come through the Dash's XAPI endpoints, which have no fixtures yet — the
+theme shows "LOADING…" where they would be.
 
 ## 4a. The decompiled panel
 

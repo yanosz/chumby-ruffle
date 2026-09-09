@@ -672,7 +672,7 @@ cap, with the present path (~35–55 ms/frame) as the remaining ceiling.
 Number: 12
 Timestamp: 2026-09-09, 19:10
 Title: Dash: reach the home screen offline (the Dash's FR7).
-Status: open — step 3 item, the largest
+Status: home screen reached on dev 2026-09-09 with fixtures only (`fixtures-dash/`, `run-dash.sh`); channels/widgets (XAPI) still open — see below
 Description: The classic's offline route is `-Pbuiltin=1`; on the Dash
 `builtin` makes the startup wizard *quit* (`startup/StartupPanel.as:130-139,
 183-192, 214-223`, `fscommand("quit")` at `:262`). The route that reaches
@@ -697,6 +697,72 @@ needs its own answer, since the theme, not a widget, is the default view.
 Size: L. Patch surface: fixtures and `core/src/chumby/fixture.rs`/`navigator.rs`
 (additions commit only) unless the XAPI signature needs a Rust-side verifier
 (it does not: fixture answers are keyed on path).
+
+Result, 2026-09-09 (step 4). The gate was smaller than feared, and the
+XAPI family is *not* on the home-screen path: `CPMain.initialize()` calls
+`goHome()` before `fetchDevice()` (`controlpanel/CPMain.as:81-82`), so the
+theme loads first and the device/profile/profiles requests only feed the
+widget area. What the Dash needed on the desktop, all fixtures, no code:
+
+- `/psp/securityQuestion` and `/psp/securityAnswer` present, so
+  `needStartNetwork()` (`StartupPanel.as:264-272`) is false. This — not
+  `hasNetwork` — is what sent the first run into the network wizard;
+  `hasNetwork` ends true because `StartupPanelCheckNetwork.as:28` uses
+  `!hasErrors()`, and the fork's `network_status.sh` answer has no
+  `<error>`. (`NetworkStatus.lastStatusResult`, `NetworkStatus.as:29`,
+  also wants `up="true"`, which the fork's XML lacks; its three consumers
+  are status surfaces — WiredButton, NetworkSummaryPanel,
+  DelinkResult — and the classic reads no `up`/`link` attribute, so adding
+  both is safe; filed under issue 19.)
+- the classic `fixtures/http/xml.chumby.com/xml/authorize` answer as is:
+  `Authorization.fromXML` (`structure/Authorization.as:75-92`) wants
+  `<chumby id><name>…</name></chumby>`, which it is.
+- `CHECK_DATE` is `new Date().getFullYear() > 2007`
+  (`StartupPanelCheckDate.as:21`).
+- **no `/tmp/nightmode`**: the classic tree tracks that file
+  (`fixtures/rootfs/tmp/nightmode`, from the first host commit), and the
+  Dash's `ScreenManager` boots into night mode when it exists — the second
+  run showed the big night clock with a "Power Save" button over the
+  theme. This is the concrete reason the Dash gets its own tree, together
+  with `/psp/alarms`, which the Dash rewrites in its own schema at first
+  start.
+- a theme at `/psp/theme.swf` (`swf-assets/dash/default_theme.swf`,
+  symlinked in by `run-dash.sh`) and `/psp/theme_name.txt`.
+- exec manifest entries for `killall bivlcored` (→ `0`), the chumbrowser
+  stop, `ap_scan` and `network_adapter_list.sh` (→ empty).
+
+With those the panel goes BLANK → CHECK_NETWORK → CHECK_AUTHORIZE (fixture
+hit) → CHECK_DATE → NORMAL_MODE → `CPMain` → `HomeScreenProxy` →
+`ThemeLoader`: `rootfs HIT file:////psp/theme.swf` — the navigator's
+`file://` mapping (survey §1.7 "unverified") works for the theme — and the
+theme answers with `_setDisplayRect(2, 134, 454, 232, 472)` /
+`_setDisplayRectEventTranslate(2, -134, -232)`, its widget rectangle. The
+screen is the Space Theme's LCARS layout with "LOADING…" in the widget and
+pick slots. No panic in 45 s; the 2 000-odd stack-underflow warnings
+(issue 18) are still there.
+
+Still open on this item, now as its second half: the widget area. After
+`goHome()` the panel POSTs `/xapis/auth/create` (fixture missing → clean
+fail → `gotBadDeviceInfo` does nothing, `DEVICE_UPDATE_TIME` poll), so an
+offline channel needs `xapis/auth/create` → `<oauth_session valid_for="…">key</oauth_session>`,
+`xapis/device/index/<guid>` → `<chumby anonymous="false"><name/><user id=""/><profile id=""/></chumby>`
+(`Device.as:110-121`), `xapis/profile/show/<id>` → `<profile id><name/><info master=""/><widget_instances><widget_instance…/></widget_instances></profile>`
+(`Profile.as:98-137`, `WidgetInstance.as:114-126`, `Widget.as:122-144`),
+`xapis/profile/list/<guid>` → `<profiles><profile id><name/><description/><widget_instances thumbnail="" count=""/></profile></profiles>`
+(`ProfileSummary.as:42-47`). Two fork points: fixture paths carry the GUID,
+which is per box on the appliance, so `FixtureHost::fetch` needs a wildcard
+segment; and the GET requests carry `oauth_*` query parameters, which the
+fixture host already strips. Whether the Dash's default view needs any
+widget at all (FR17's "empty channel is a clock" was about a widget-only
+screen; here the theme *is* the clock) is a scope question for Jan.
+
+Also seen and not chased: `tzdump America/Los_Angeles` and `…/New_York`
+(issue 13 — the Dash's clock locations default to those two), the
+`chumbthumb` exec for the sample photo (issue 13/15), the six music icons
+and `externalmusic/sources.xml` on `files.chumby.com` (issue 16), and the
+`exec://` command arriving percent-encoded (`nice -n 10 chumbthumb%20…`),
+which the manifest prefix match survives but a Rust reimplementation must
+decode — noted for issue 13.
 
 ---
 

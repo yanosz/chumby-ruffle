@@ -26,6 +26,7 @@ RECOVER_*.fla
 # thumbnails and the alarm tones are chumby firmware too. The appendix is
 # the decompiled panel; the screenshots show its artwork.
 /fixtures/**/*.swf
+/fixtures-dash/**/*.swf
 /fixtures/**/*.mp3
 /fixtures/**/*.wav
 /fixtures/widgets/*.jpg
@@ -47,6 +48,8 @@ RECOVER_*.fla
 
 # Per-box dev identity, generated at first start (real_ident.rs).
 /fixtures/rootfs/psp/guid
+/fixtures-dash/rootfs/psp/guid
 
 # Per-box player config (config.rs); absent means defaults.
 /fixtures/player.toml
+/fixtures-dash/player.toml
