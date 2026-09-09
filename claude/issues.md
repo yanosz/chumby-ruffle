@@ -557,7 +557,7 @@ now for silent cancellers.
 Number: 11
 Timestamp: 2026-09-09, 19:10
 Title: Dash: the Space Theme costs a full core on the DSI box.
-Status: diagnosed 2026-09-09 — full-frame masks, one per text field; fix proposed, CHECKPOINT 4 open
+Status: fixed on dev 2026-09-09 (bounded masks, `render/tiny_skia/src/lib.rs`); kiosk fps on the box not yet re-measured — needs a deploy
 Description: `claude/dash-panel-survey.md` §4: on chumby-pi-3 (1024x600 DSI,
 tiny-skia) the Dash panel itself holds 12 fps at 53 % of a core, but
 `default_theme.swf` alone runs at 9.5 fps and 105 %; on the desktop the theme
@@ -636,6 +636,36 @@ become free. Size S–M, ~80 lines plus tests next to the three existing
 mask tests. Consumers of the touched code: the four mask entry points,
 `intersect`, the three mask-geometry branches, `clip()` at the five fill
 sites — all in this one file.
+
+Implemented, 2026-09-09. `BoundedMask` wraps the full-frame `Mask` with the
+`IntRect` of pixels it has touched; `fill` unions in the transformed path
+bounds (+1 px for anti-aliasing, degenerate paths skipped), `take` zeroes
+only that box, `intersect` multiplies only the inner box and shrinks it to
+the overlap, and every draw under an active clip whose box is `None` is
+skipped (`clip_is_empty`). `MaskStack::target()` became `fill()`, so the
+three mask-geometry branches no longer touch the `Mask` directly. Three
+unit tests added (reuse is clean, intersection stays inside the outer box,
+degenerate geometry leaves an empty clip); 11 pass.
+
+| `render()` mean per frame | before | after |
+|---|---|---|
+| theme, box (aarch64 release) | 178.7 ms | **62.7 ms** |
+| Dash panel, box | 12.8 ms | 11.4 ms |
+| classic, box, 800x600 | 25.3 ms | 25.1 ms |
+| theme, desktop | 8.0 ms | 4.8 ms |
+| classic, desktop | 1.82 ms | 1.80 ms |
+
+The classic gains nothing because its two masks cover most of the frame,
+so the box is the frame; what "masks off" saved there (18.8 ms) was the
+per-pixel clip in the fills themselves, which stays. Fidelity: 24 frames
+each of theme, Dash panel and classic rendered by the old and the new code
+in the same session differ in **0 pixels**; a 40 s live desktop run of the
+classic on tiny-skia (4 masks/frame) was clean, and the ~14 per-frame
+"empty paths … cannot be filled" warnings are gone. `rustfmt`/`clippy` are
+not installed on this toolchain and were not run. Patch surface unchanged
+(own crate). Next for this item: a `dist` deploy to the box to read the
+kiosk fps with the theme — expected to move from 9.5 toward the 12 fps
+cap, with the present path (~35–55 ms/frame) as the remaining ceiling.
 
 ---
 

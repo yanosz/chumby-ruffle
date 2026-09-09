@@ -33,8 +33,8 @@ use ruffle_render::quality::StageQuality;
 use ruffle_render::shape_utils::{DistilledShape, DrawCommand, DrawPath, FillRule};
 use swf::{Color, ColorTransform, FillStyle, Gradient, GradientSpread};
 use tiny_skia::{
-    FillRule as SkFillRule, FilterQuality, GradientStop, IntSize, LinearGradient, Paint, Path,
-    Mask, PathBuilder, Pattern, Pixmap, PixmapPaint, PixmapRef, Point, RadialGradient, Shader,
+    FillRule as SkFillRule, FilterQuality, GradientStop, IntRect, IntSize, LinearGradient, Paint,
+    Path, Mask, PathBuilder, Pattern, Pixmap, PixmapPaint, PixmapRef, Point, RadialGradient, Shader,
     SpreadMode, Stroke,
     Transform as SkTransform,
 };
@@ -119,16 +119,113 @@ impl TinySkiaRenderBackend {
 /// its own state rather than sharing one depth counter.
 enum MaskLevel {
     /// Geometry submitted now *defines* this mask instead of being drawn.
-    Building(Mask),
+    Building(BoundedMask),
     /// This mask clips every draw until it is popped.
-    Active(Mask),
+    Active(BoundedMask),
+}
+
+/// A full-frame mask that remembers which pixels it has touched. Ruffle
+/// pushes a mask per text field (`edit_text.rs`), so a busy screen builds
+/// dozens per frame; clearing and intersecting the whole frame for each of
+/// them was two thirds of the Space Theme's render time on the Pi. Only the
+/// box is ever written, cleared or multiplied; outside it the mask is zero.
+struct BoundedMask {
+    mask: Mask,
+    /// Pixels that may be non-zero. `None` means the mask is all zero, i.e.
+    /// an empty clip.
+    dirty: Option<IntRect>,
+}
+
+impl BoundedMask {
+    fn new(width: u32, height: u32) -> Option<Self> {
+        Mask::new(width, height).map(|mask| Self { mask, dirty: None })
+    }
+
+    fn fill(&mut self, path: &Path, rule: SkFillRule, transform: SkTransform) {
+        let Some(bounds) = pixel_bounds(path, transform, self.mask.width(), self.mask.height())
+        else {
+            return;
+        };
+        self.mask.fill_path(path, rule, true, transform);
+        self.dirty = Some(match self.dirty {
+            Some(d) => union(d, bounds),
+            None => bounds,
+        });
+    }
+
+    /// Zero the touched box; the rest never changed.
+    fn clear_dirty(&mut self) {
+        let Some(d) = self.dirty.take() else { return };
+        let width = self.mask.width() as usize;
+        let data = self.mask.data_mut();
+        for y in d.top() as usize..d.bottom() as usize {
+            data[y * width + d.left() as usize..y * width + d.right() as usize].fill(0);
+        }
+    }
+}
+
+/// Device-pixel box a path covers under `transform`, one pixel wider for
+/// anti-aliasing, clamped to the mask. Degenerate paths give `None` — they
+/// fill nothing, and tiny-skia would only log a warning for them.
+fn pixel_bounds(path: &Path, transform: SkTransform, width: u32, height: u32) -> Option<IntRect> {
+    let b = path.bounds();
+    // tiny-skia's own SCALAR_NEARLY_ZERO (1/4096), the threshold its fill_path warns at.
+    if b.width() < 1.0 / 4096.0 || b.height() < 1.0 / 4096.0 {
+        return None;
+    }
+    let mut corners = [
+        Point::from_xy(b.left(), b.top()),
+        Point::from_xy(b.right(), b.top()),
+        Point::from_xy(b.left(), b.bottom()),
+        Point::from_xy(b.right(), b.bottom()),
+    ];
+    transform.map_points(&mut corners);
+    let (mut l, mut t, mut r, mut bt) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+    for c in corners {
+        l = l.min(c.x);
+        t = t.min(c.y);
+        r = r.max(c.x);
+        bt = bt.max(c.y);
+    }
+    if !(l.is_finite() && t.is_finite() && r.is_finite() && bt.is_finite()) {
+        return None;
+    }
+    let l = (l.floor() - 1.0).max(0.0) as i32;
+    let t = (t.floor() - 1.0).max(0.0) as i32;
+    let r = (r.ceil() + 1.0).min(width as f32) as i32;
+    let bt = (bt.ceil() + 1.0).min(height as f32) as i32;
+    if l >= r || t >= bt {
+        return None;
+    }
+    IntRect::from_ltrb(l, t, r, bt)
+}
+
+fn union(a: IntRect, b: IntRect) -> IntRect {
+    IntRect::from_ltrb(
+        a.left().min(b.left()),
+        a.top().min(b.top()),
+        a.right().max(b.right()),
+        a.bottom().max(b.bottom()),
+    )
+    .unwrap_or(a)
+}
+
+fn intersection(a: IntRect, b: IntRect) -> Option<IntRect> {
+    let l = a.left().max(b.left());
+    let t = a.top().max(b.top());
+    let r = a.right().min(b.right());
+    let bt = a.bottom().min(b.bottom());
+    if l >= r || t >= bt {
+        return None;
+    }
+    IntRect::from_ltrb(l, t, r, bt)
 }
 
 #[derive(Default)]
 struct MaskStack {
     levels: Vec<MaskLevel>,
     /// Retired masks, kept to avoid re-allocating ~w*h bytes every frame.
-    spare: Vec<Mask>,
+    spare: Vec<BoundedMask>,
 }
 
 impl MaskStack {
@@ -138,27 +235,36 @@ impl MaskStack {
 
     /// The innermost mask that is actually clipping.
     fn clip(&self) -> Option<&Mask> {
+        self.active().map(|m| &m.mask)
+    }
+
+    /// The innermost active clip lets nothing through: skip the draw.
+    fn clip_is_empty(&self) -> bool {
+        matches!(self.active(), Some(m) if m.dirty.is_none())
+    }
+
+    fn active(&self) -> Option<&BoundedMask> {
         self.levels.iter().rev().find_map(|level| match level {
             MaskLevel::Active(mask) => Some(mask),
             MaskLevel::Building(_) => None,
         })
     }
 
-    fn target(&mut self) -> Option<&mut Mask> {
-        match self.levels.last_mut() {
-            Some(MaskLevel::Building(mask)) => Some(mask),
-            _ => None,
+    /// Geometry for the mask being defined; ignored when none is.
+    fn fill(&mut self, path: &Path, rule: SkFillRule, transform: SkTransform) {
+        if let Some(MaskLevel::Building(mask)) = self.levels.last_mut() {
+            mask.fill(path, rule, transform);
         }
     }
 
-    fn take(&mut self, width: u32, height: u32) -> Option<Mask> {
+    fn take(&mut self, width: u32, height: u32) -> Option<BoundedMask> {
         while let Some(mut mask) = self.spare.pop() {
-            if mask.width() == width && mask.height() == height {
-                mask.clear();
+            if mask.mask.width() == width && mask.mask.height() == height {
+                mask.clear_dirty();
                 return Some(mask);
             }
         }
-        Mask::new(width, height)
+        BoundedMask::new(width, height)
     }
 
     fn push(&mut self, width: u32, height: u32) {
@@ -175,7 +281,7 @@ impl MaskStack {
         let Some(MaskLevel::Building(mut mask)) = self.levels.pop() else {
             return;
         };
-        if let Some(outer) = self.clip() {
+        if let Some(outer) = self.active() {
             intersect(&mut mask, outer);
         }
         self.levels.push(MaskLevel::Active(mask));
@@ -211,13 +317,23 @@ impl MaskStack {
 }
 
 /// tiny-skia can intersect a mask with a *path* but not with another mask.
-fn intersect(mask: &mut Mask, other: &Mask) {
-    if mask.width() != other.width() || mask.height() != other.height() {
+/// Only the inner box needs the multiply: outside it the inner mask is
+/// already zero, and outside the outer's box the product becomes zero.
+fn intersect(mask: &mut BoundedMask, other: &BoundedMask) {
+    if mask.mask.width() != other.mask.width() || mask.mask.height() != other.mask.height() {
         return;
     }
-    for (a, b) in mask.data_mut().iter_mut().zip(other.data()) {
-        *a = ((*a as u16 * *b as u16 + 127) / 255) as u8;
+    let Some(inner) = mask.dirty else { return };
+    let width = mask.mask.width() as usize;
+    let data = mask.mask.data_mut();
+    let other_data = other.mask.data();
+    for y in inner.top() as usize..inner.bottom() as usize {
+        let row = y * width + inner.left() as usize..y * width + inner.right() as usize;
+        for (a, b) in data[row.clone()].iter_mut().zip(&other_data[row]) {
+            *a = ((*a as u16 * *b as u16 + 127) / 255) as u8;
+        }
     }
+    mask.dirty = other.dirty.and_then(|o| intersection(inner, o));
 }
 
 fn new_pixmap(width: u32, height: u32) -> Pixmap {
@@ -699,14 +815,16 @@ impl CommandHandler for TinySkiaRenderBackend {
                 (pixmap.width() as f32, pixmap.height() as f32)
             };
             let rect = tiny_skia::Rect::from_xywh(0.0, 0.0, w, h).map(PathBuilder::from_rect);
-            if let (Some(mask), Some(rect)) = (self.masks.target(), rect) {
-                mask.fill_path(
+            if let Some(rect) = rect {
+                self.masks.fill(
                     &rect,
                     SkFillRule::Winding,
-                    true,
                     sk_transform(&transform.matrix, TWIPS_TO_PIXELS),
                 );
             }
+            return;
+        }
+        if self.masks.clip_is_empty() {
             return;
         }
         let sk = as_sk_bitmap(&bitmap);
@@ -744,18 +862,17 @@ impl CommandHandler for TinySkiaRenderBackend {
         let matrix = sk_transform(&transform.matrix, TWIPS_TO_PIXELS);
         if self.masks.defining() {
             // Only the shape's coverage matters for a mask, not its paint.
-            if let Some(mask) = self.masks.target() {
-                for draw in &sk.0 {
-                    match draw {
-                        SkDraw::Fill { path, rule, .. } => {
-                            mask.fill_path(path, *rule, true, matrix)
-                        }
-                        SkDraw::Stroke { path, .. } => {
-                            mask.fill_path(path, SkFillRule::Winding, true, matrix)
-                        }
+            for draw in &sk.0 {
+                match draw {
+                    SkDraw::Fill { path, rule, .. } => self.masks.fill(path, *rule, matrix),
+                    SkDraw::Stroke { path, .. } => {
+                        self.masks.fill(path, SkFillRule::Winding, matrix)
                     }
                 }
             }
+            return;
+        }
+        if self.masks.clip_is_empty() {
             return;
         }
         // Cached paints hold the untransformed colours; only rebuild when a
@@ -833,9 +950,10 @@ impl CommandHandler for TinySkiaRenderBackend {
         let Some(path) = unit_rect() else { return };
         let transform = sk_transform_unit(&matrix);
         if self.masks.defining() {
-            if let Some(mask) = self.masks.target() {
-                mask.fill_path(&path, SkFillRule::Winding, true, transform);
-            }
+            self.masks.fill(&path, SkFillRule::Winding, transform);
+            return;
+        }
+        if self.masks.clip_is_empty() {
             return;
         }
         let paint = Paint {
@@ -854,7 +972,7 @@ impl CommandHandler for TinySkiaRenderBackend {
 
     fn draw_line(&mut self, color: Color, matrix: Matrix) {
         self.stats.lines += 1;
-        if self.masks.defining() {
+        if self.masks.defining() || self.masks.clip_is_empty() {
             return;
         }
         let mut builder = PathBuilder::new();
@@ -971,6 +1089,55 @@ mod tests {
         assert!(stack.defining(), "the replayed geometry is not content");
         stack.pop();
         assert!(!stack.defining());
+    }
+
+    fn rect_path(l: f32, t: f32, r: f32, b: f32) -> Path {
+        PathBuilder::from_rect(tiny_skia::Rect::from_ltrb(l, t, r, b).unwrap())
+    }
+
+    /// A reused mask must be all zero again, whatever was drawn into it.
+    #[test]
+    fn reused_mask_is_clean() {
+        let mut stack = MaskStack::default();
+        stack.push(8, 8);
+        stack.fill(&rect_path(2.0, 2.0, 6.0, 6.0), SkFillRule::Winding, SkTransform::identity());
+        stack.activate();
+        assert!(stack.clip().unwrap().data().iter().any(|&v| v > 0));
+        stack.pop();
+        stack.push(8, 8);
+        stack.activate();
+        assert!(stack.clip().unwrap().data().iter().all(|&v| v == 0));
+        assert!(stack.clip_is_empty());
+    }
+
+    /// An inner mask keeps only what the outer clip lets through, and its
+    /// box shrinks to the overlap.
+    #[test]
+    fn activate_intersects_within_the_outer_box() {
+        let mut stack = MaskStack::default();
+        stack.push(8, 8);
+        stack.fill(&rect_path(0.0, 0.0, 4.0, 8.0), SkFillRule::Winding, SkTransform::identity());
+        stack.activate();
+        stack.push(8, 8);
+        stack.fill(&rect_path(0.0, 0.0, 8.0, 8.0), SkFillRule::Winding, SkTransform::identity());
+        stack.activate();
+        let inner = stack.active().unwrap();
+        let data = inner.mask.data();
+        assert_eq!(data[8 + 1], 255, "inside both");
+        assert_eq!(data[8 + 6], 0, "outside the outer clip");
+        let d = inner.dirty.unwrap();
+        assert!(d.right() <= 5 && d.left() == 0, "box shrank to the overlap: {d:?}");
+        assert!(!stack.clip_is_empty());
+    }
+
+    /// Geometry with no area defines nothing and costs nothing.
+    #[test]
+    fn degenerate_geometry_leaves_the_mask_empty() {
+        let mut stack = MaskStack::default();
+        stack.push(8, 8);
+        stack.fill(&rect_path(1.0, 1.0, 1.0, 5.0), SkFillRule::Winding, SkTransform::identity());
+        stack.activate();
+        assert!(stack.clip_is_empty());
     }
 
     fn approx(a: f32, b: f32) -> bool {
