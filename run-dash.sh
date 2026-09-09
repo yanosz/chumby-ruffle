@@ -25,6 +25,13 @@ else
     echo "no $THEME — the panel will show no theme" >&2
 fi
 
+# Widget SWFs (chumby's, gitignored) sit in swf-assets/dash/widgets/; the
+# channel fixture names them as file:////usr/widgets/<name>.swf.
+mkdir -p "$FIXTURES/rootfs/usr/widgets"
+for w in "$DIR"/swf-assets/dash/widgets/*.swf; do
+    [ -f "$w" ] && ln -sf "$w" "$FIXTURES/rootfs/usr/widgets/$(basename "$w")"
+done
+
 [ -p "$CTL" ] || mkfifo -m 600 "$CTL" || exit 1
 
 if [ ! -x "$RUFFLE" ]; then

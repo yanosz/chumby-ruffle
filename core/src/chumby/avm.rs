@@ -84,6 +84,8 @@ pub fn method<'gc>(
     super::empty_channel::apply(activation);
     // One-shot: a silent (type="none") alarm must not cancel a sounding one.
     super::alarm_guard::apply(activation);
+    // One-shot: the Dash's widgets load on its proxy path, not the slave.
+    super::dash_widget::apply(activation);
     // A pending supervisor restart quits once the panel is idle — checked
     // only at the per-frame _bent poll, the first statement of
     // BendSensor.onEnterFrame (F2:3423). Inside other natives the alarm
