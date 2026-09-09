@@ -551,3 +551,198 @@ Also observed and not part of this fix: the cancel used to run
 `Alarm.restoreSoundSettings()`, which is why a manual restart after a
 cancelled alarm played at the pre-alarm volume (44 → 16 on the device). Moot
 now for silent cancellers.
+
+---
+
+Number: 11
+Timestamp: 2026-09-09, 19:10
+Title: Dash: the Space Theme costs a full core on the DSI box.
+Status: open — step 3 item, proposed first in step 4 because it can invalidate the rest
+Description: `claude/dash-panel-survey.md` §4: on chumby-pi-3 (1024x600 DSI,
+tiny-skia) the Dash panel itself holds 12 fps at 53 % of a core, but
+`default_theme.swf` alone runs at 9.5 fps and 105 %; on the desktop the theme
+takes 2–3x the CPU of either panel (12 % vs 6 % vs 4 %, same binary, same
+1024x571 window). The theme is a vector-only SWF — 43 `DefineShape*`, 126
+sprites, 30 `DefineEditText`, six fonts, no bitmaps, no filters (tag dump) —
+whose `MainDate.onEnterFrame` rewrites the seconds field every second and
+whose modules run one-shot `onEnterFrame` initialisers (`com/example/{Module,
+Controls,Pushback,ListItem}.as`), `OtherTime` per minute, `Calendar` per day.
+Not diagnosed: renderer versus script, and which shapes dominate. Since a
+theme is the home screen most of the time, this number, not the panel's,
+decides whether the Dash is viable on the Pi 3B+. Levers, in order of
+preference: find the expensive construct and see whether a theme of our own
+avoids it; the render-scale lever (rendering-defaults note, still open); a
+frame cap (deferred by Jan). Size: M (measure with `top -H` and
+`RUST_LOG=ruffle_render_tiny_skia=trace`-class instrumentation on the box, then
+decide). Patch surface: none for the measurement; a render-scale knob would
+touch `desktop/src/cli.rs` (already a hook file).
+
+---
+
+Number: 12
+Timestamp: 2026-09-09, 19:10
+Title: Dash: reach the home screen offline (the Dash's FR7).
+Status: open — step 3 item, the largest
+Description: The classic's offline route is `-Pbuiltin=1`; on the Dash
+`builtin` makes the startup wizard *quit* (`startup/StartupPanel.as:130-139,
+183-192, 214-223`, `fscommand("quit")` at `:262`). The route that reaches
+`NORMAL_MODE_STATE` is CHECK_NETWORK → CHECK_AUTHORIZE → CHECK_DATE →
+`doNetworkThings` + `CPMain` → `HomeScreenProxy` → `ThemeLoader`, which needs:
+(a) `Chumby.hasNetwork` true — set from `network_status.sh` through
+`StartupPanelCheckNetwork.as:28` (`!interfacex.hasErrors()`); the desktop run
+got false from the classic fixture, so the Dash's `NetworkStatus.fromXML`
+shape must be checked against `fixtures/exec` (survey §3); (b)
+`needStartNetwork()` false, i.e. `/psp/securityQuestion` and
+`/psp/securityAnswer` present and no `/psp/running_delink`
+(`StartupPanel.as:264-272`); (c) `/xml/authorize?id=<guid>&hw=…` answered
+(`structure/Authorization.as:52`; the classic fixture exists under
+`fixtures/http/xml.chumby.com/`, response shape to compare); (d) a valid date.
+After that `CPMain` loads device, profile and widgets through the **XAPI**
+family — `chumbynetwork/{XAPI,XAPIRequest,Device,Profile,Profiles,
+WidgetCatalog}.as`, OAuth-style `MD5-HEX`-signed requests under
+`{base}/xapis/…` with an `/xapis/auth/create` handshake — which has no fixture
+today and replaces the classic's `/xml/chumbies`, `/xml/profiles`. The
+Dash equivalent of FR17 (an empty channel is a clock; `empty_channel.rs`)
+needs its own answer, since the theme, not a widget, is the default view.
+Size: L. Patch surface: fixtures and `core/src/chumby/fixture.rs`/`navigator.rs`
+(additions commit only) unless the XAPI signature needs a Rust-side verifier
+(it does not: fixture answers are keyed on path).
+
+---
+
+Number: 13
+Timestamp: 2026-09-09, 19:10
+Title: Dash: exec touchpoints the fork does not answer.
+Status: open — step 3 item
+Description: Survey §2.4 lists every command; missing today (desktop run and
+`fixtures/exec/manifest.txt`): `ap_scan`, `network_adapter_list.sh`, `killall
+bivlcored; echo $?`, `list_mounts` (USB mount list, four callers — real value
+on the Pi, `real_net.rs` precedent), `imgtool --fb=N --fill=0,0,0`, `metadb
+--prune <mnt>`, `du -s <cache>`, `chumby_haptic`, `hide_gfx_layer0`,
+`delink_request` and friends, the chumbrowser start/stop pair (no browser: a
+clean failure), and two that need real work: **`tzdump <zone>`**
+(`time/TimeZoneTransitions.as:30` — the Dash computes DST transitions from
+its XML `<zone><time utc= …/></zone>` output; implement in Rust from the
+system tzdata, size M, the clock is wrong without it) and `chumbthumb`
+(`image/ImageResizer2.as:8`, photo resize to a path — M, photos only). The
+theme-picker path needs `/psp/download_theme <url> <md5>` → `<download_theme
+error="success"/>`, `md5sum /psp/theme.swf`, and the `cp … /psp/theme.swf;
+rm …; sync; echo $?` / `rm …` strings interpreted in Rust the way
+`parse_widget_curl` (`navigator.rs:130-190`) does for the widget cache — S
+for the local copy, M with the download. Size: M overall. Patch surface:
+`core/src/chumby/` only (NFR2: Rust, not shell).
+
+---
+
+Number: 14
+Timestamp: 2026-09-09, 19:10
+Title: Dash: widgets are composed inside a theme-chosen rectangle.
+Status: open — step 3 item
+Description: On a device `WidgetSequencer.playCurrentWidget` takes the
+`_startSlave` branch (`widgetbrowser/WidgetSequencer.as:353-360`), which the
+fork does not run (requirements FR2 M6); the classic gets its widgets through
+the panel's own `widgetProxy`/localCache path, and the intro through a
+prototype replacement (`intro.rs`). The Dash carries the same alternative
+inline: its off-device branch (`:363-372`) `loadClip`s the widget into
+`__widgetProxy` under `_lockroot`, and `setPositionAndSize` (`:600-611`)
+places it in the rectangle the theme asked for via
+`ThemeCallbacks.setWidgetPosition` (`dash/themes/ThemeCallbacks.as:109-113`);
+on the slave branch the same rectangle goes to `_setDisplayRect(MAP_SLAVE,…)`
+and `_setDisplayRectEventTranslate` plus `_chumby_widget_stage_width/height`
+slave vars. Options: make `WidgetSequencer._isChumby` false while
+`Chumby.isChumby` stays true (its origin is unread — verify first), or
+answer `_startSlave` by performing the proxy load. Widgets stay 320x240
+content (`:364`) scaled into the mask, so the classic widget set is reusable.
+Size: M. Patch surface: additions (a prototype surgery next to `intro.rs`).
+
+---
+
+Number: 15
+Timestamp: 2026-09-09, 19:10
+Title: Dash: the `sys://` local-file scheme.
+Status: open — step 3 item
+Description: The theme loads resized photos as `sys://<path>`
+(`default_theme` `com/example/PhotoHolder.as:25`), the panel builds
+`sys:////<cache path>` (`util/CacheManager.as:132`) and `sys://<usb photo>`
+(`settings/usbphotos/USBPhotoPanelItemInfo.as:22`), and
+`ThemeCallbacks.deleteTemporaryFile` strips `sys:/` (`:196`).
+`navigator.rs:59` already strips `file://` before the rootfs lookup; `sys://`
+is the same one-liner. Size: S. Photos as a feature (USB scan, Photobucket,
+`chumbthumb`) are a separate, optional M–L on top.
+
+---
+
+Number: 16
+Timestamp: 2026-09-09, 19:10
+Title: Dash: chumby.com surface to intercept (NFR6).
+Status: open — step 3 item
+Description: Survey §2.6. Beyond `xml.chumby.com` (issue 12) the Dash talks to
+`files.chumby.com/dash/$RELEASE$controlpanel/controlpanel.xml` — a **panel
+self-updater** 30 min after start and daily (`structure/UpdateMonitorCP.as:5-27`;
+a fixture miss is a clean "no update", but it must never pass through),
+`…/themes/themes.xml` (the catalog: a fixture listing the locally installed
+themes makes the picker work offline — this is how a user-supplied theme
+shows up in the UI without a stick), `…/externalmusic/sources.xml`,
+`…/icons/*.png`, `files.chumby.com/yume/photoimages/photos.xml`,
+`content.chumby.com` (SHOUTcast, NYT podcasts, NOAA), `music.chumby.com`
+(chumbcast, sleepcast — classic passthrough precedent, `fixture.rs:391-399`),
+plus `chumby.weather.com`, `images.weather.com`, `sonyyume.accu-weather.com`
+(dead third parties: clean failure). Verify `is_chumby_host` covers
+`files.chumby.com` and `content.chumby.com`. Size: S–M, fixtures under
+`fixtures/http/`. Patch surface: none.
+
+---
+
+Number: 17
+Timestamp: 2026-09-09, 19:10
+Title: Dash: six natives the fork does not bind.
+Status: open — step 3 item
+Description: `com/blueocty/DashNative.as`: (5,390) `_getFlipState` and (5,391)
+`_setFlipState` (the Dash's upside-down mode, `accelerometer/Flipper`),
+(5,392)/(5,393) logo LED, (5,394) `_fadeBacklight` (map onto `brightness.rs`
+or ignore); `ChumbyNative.as:287` (5,445) `_getWidgetNumber`, read at
+`WidgetSequencer.as:238-240,681` behind an `!= undefined` guard, so
+`Undefined` skips the branch. Bind in `avm.rs`'s name table, answer in
+`fixture.rs`. Size: S. Patch surface: additions only.
+
+---
+
+Number: 18
+Timestamp: 2026-09-09, 19:10
+Title: Dash: 2 267 AVM1 stack-underflow warnings in 45 s.
+Status: open — step 3 item, investigation
+Description: Survey §3: `Avm1::pop: Stack underflow` 2 267 times during the
+panel's first 45 s and 64 times for the theme alone, almost all during
+`DoInitAction` class initialisation (1 332 such tags, SWF version 8). No
+panic and the panel runs, so the effect is unknown — a wrong value on an
+empty pop is the kind of thing that later shows as a missing listener or a
+silent branch. Diagnose with `RUST_LOG=ruffle_core::avm1=trace` on the theme
+(64 warnings, small); if it is a Ruffle opcode-semantics gap it is an
+upstream bug and, if fixed locally, lands in the edits commit. Size: S to
+diagnose, unknown to fix.
+
+---
+
+Number: 19
+Timestamp: 2026-09-09, 19:10
+Title: Dash: subsystems written against the classic that need re-verifying.
+Status: open — step 3 item
+Description: Things the fork does by name or by classic layout: (a)
+`alarm_guard.rs` and `backup_alarm.rs` hook `Alarm.ringAlarm` /
+`stopAlarmsExcept` F2 prototypes — the Dash's `com.chumby.alarm.AlarmSet` is
+a different class tree, so the hooks will not match and the issue-10 bug may
+or may not exist there; the Dash also has scheduler events (`/psp/events`,
+`com/chumby/event/*`). (b) `ui-policy.toml` (12 rules) names classic
+screens; the Dash needs its own policy set, starting empty. (c) Audio: the
+Dash calls the same BTPlayer natives the fixture host answers
+(`_playAudio`, `_getAudioPlayerState`, …) plus `_sendMediaPlayerCommand`
+(5,152, 3 sites) and the pipe family (5,191-195), both logging stubs today.
+(d) Volume, mute, time zone and system time go through natives 5,176-185
+(fixture-answered) rather than `chumby_set_*` scripts. (e) Display: the Dash
+drives two framebuffers (`_setDisplay` 0/1, overlay visibility and chroma
+blending, `_fillFrameBufferBytes`, `_enableSlaveUpdates`) with no
+`/psp/nooverlay` switch; all are logging stubs and the panel still painted on
+the desktop — confirm nothing hides behind an overlay assumption once theme
+and widget are on screen. (f) `_getScreenWidth/Height` (5,200/201) feed
+`Chumby.screenWidth/Height`; check what the fixture returns for an 860x480
+stage. Size: M in total, mostly reading and running.
