@@ -939,7 +939,7 @@ clock needs; a widget with an odd aspect ratio may want it later.
 Number: 15
 Timestamp: 2026-09-09, 19:10
 Title: Dash: the `sys://` local-file scheme.
-Status: open — step 3 item
+Status: done on dev 2026-09-09 — one more prefix in the navigator's local-path mapping
 Description: The theme loads resized photos as `sys://<path>`
 (`default_theme` `com/example/PhotoHolder.as:25`), the panel builds
 `sys:////<cache path>` (`util/CacheManager.as:132`) and `sys://<usb photo>`
@@ -948,6 +948,17 @@ Description: The theme loads resized photos as `sys://<path>`
 `navigator.rs:59` already strips `file://` before the rootfs lookup; `sys://`
 is the same one-liner. Size: S. Photos as a feature (USB scan, Photobucket,
 `chumbthumb`) are a separate, optional M–L on top.
+
+Done, 2026-09-09. The `file://`-or-absolute-path test in `intercept` became
+`fn local_path(url)`, which now also strips `sys://`; multi-slash forms are
+normalized downstream by `RootFs::resolve` as before. Unit-tested
+(`local_schemes_map_to_rootfs_paths`, 54 chumby tests pass) rather than in a
+run, because the only caller a run reaches is the theme's photo holder,
+which loads `sys://<dest>` only after `chumbthumb` reports success — and
+that exec is deliberately stubbed as a failure (issue 13). Photos stay the
+separate optional item; if they are wanted, `image` 0.25 is already a
+`ruffle_core` dependency, though its jpeg feature is off. Both panels run
+clean with the change.
 
 ---
 

@@ -48,8 +48,9 @@ impl<T: NavigatorBackend> ChumbyNavigator<T> {
             });
         }
         // Local device paths resolve against the virtual rootfs — the same
-        // filesystem view the fs natives use. Two forms reach here: `file://`
-        // URLs (the licenses viewer's file:////LICENSES/gpl.txt) and the
+        // filesystem view the fs natives use. Three forms reach here:
+        // `file://` URLs (the licenses viewer's file:////LICENSES/gpl.txt),
+        // `sys://` ones (the Dash's own local-file scheme), and the
         // scheme-less absolute paths loadMovie uses for a cached widget
         // (/tmp/widgetcache/<id>?_chumby_widget_instance_index=…). A rootfs
         // miss falls through to the real navigator, so real-disk paths (the
@@ -58,9 +59,7 @@ impl<T: NavigatorBackend> ChumbyNavigator<T> {
         // parameters as a query string; key the lookup on the path alone
         // (fetch() rewrites scheme-less response URLs to file:// so Ruffle
         // can parse the query into the loaded movie's vars).
-        let local_path = url
-            .strip_prefix("file://")
-            .or_else(|| url.starts_with('/').then_some(url));
+        let local_path = local_path(url);
         if let Some(path) = local_path {
             let path = path.split('?').next().unwrap_or(path);
             if let Some(body) = host.fs().get_file(path) {
@@ -84,6 +83,20 @@ impl<T: NavigatorBackend> ChumbyNavigator<T> {
             None => None,
         }
     }
+}
+
+/// The rootfs path a URL names, or `None` if it names no local file.
+/// `sys://` is the Dash's local-file scheme, used where `file://` would do:
+/// a resized photo (`default_theme` `com/example/PhotoHolder.as:25`), the
+/// widget cache directory (`util/CacheManager.as:132`, `sys:////`) and a USB
+/// photo (`settings/usbphotos/USBPhotoPanelItemInfo.as:22`). The panel
+/// strips the scheme itself before `_unlink` (`ThemeCallbacks.as:196`), so
+/// only loads arrive here. Multi-slash forms are normalized downstream by
+/// `RootFs::resolve`.
+fn local_path(url: &str) -> Option<&str> {
+    url.strip_prefix("file://")
+        .or_else(|| url.strip_prefix("sys://"))
+        .or_else(|| url.starts_with('/').then_some(url))
 }
 
 /// `%XX` escapes to bytes, anything else untouched (AS2 `escape` output).
@@ -312,7 +325,17 @@ impl SuccessResponse for BytesResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_using_url_host, parse_widget_curl, percent_decode};
+    use super::{is_using_url_host, local_path, parse_widget_curl, percent_decode};
+
+    #[test]
+    fn local_schemes_map_to_rootfs_paths() {
+        assert_eq!(local_path("file:////psp/theme.swf"), Some("//psp/theme.swf"));
+        assert_eq!(local_path("sys:///tmp/photo.jpg"), Some("/tmp/photo.jpg"));
+        assert_eq!(local_path("sys:////tmp/widgetcache/"), Some("//tmp/widgetcache/"));
+        assert_eq!(local_path("/tmp/widgetcache/abc?x=1"), Some("/tmp/widgetcache/abc?x=1"));
+        assert_eq!(local_path("http://xml.chumby.com/xml/chumbies"), None);
+        assert_eq!(local_path("exec://list_mounts"), None);
+    }
 
     #[test]
     fn decodes_as2_escape_output() {
