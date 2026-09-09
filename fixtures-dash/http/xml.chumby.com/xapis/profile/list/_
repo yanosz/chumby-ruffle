@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Profiles.parseXML / ProfileSummary (chumbynetwork/ProfileSummary.as:42-47). -->
+<profiles>
+  <profile id="1">
+    <name>chumbypi-channel</name>
+    <description>local</description>
+    <widget_instances thumbnail="" count="1"/>
+  </profile>
+</profiles>
