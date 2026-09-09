@@ -32,3 +32,12 @@ failure status.
 Widget SWFs live in `swf-assets/dash/widgets/` (gitignored); `run-dash.sh`
 links them into `rootfs/usr/widgets/`, where the channel fixture's
 `file:////usr/widgets/<name>.swf` hrefs resolve.
+
+Themes offered by the in-panel picker come from `rootfs/psp/themes/`;
+`run-dash.sh` links whatever is in `swf-assets/dash/themes/` there, and the
+catalog the panel fetches is generated from that directory
+(`core/src/chumby/dash_theme.rs`), so a theme dropped in is offered without
+any server. The catalog names a theme after its file, underscores as spaces
+(`Space_Theme.swf` → "Space Theme"). Installing one writes
+`rootfs/psp/theme.swf`, which is why the launcher seeds that path with a
+copy and never a link.

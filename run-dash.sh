@@ -19,10 +19,14 @@ if [ ! -f "$SWF" ]; then
     echo "Put it in swf-assets/dash/ or set CHUMBY_SWF=<path>."
     exit 1
 fi
-if [ -f "$THEME" ]; then
-    ln -sf "$THEME" "$FIXTURES/rootfs/psp/theme.swf"
-else
-    echo "no $THEME — the panel will show no theme" >&2
+if [ ! -f "$FIXTURES/rootfs/psp/theme.swf" ]; then
+    if [ -f "$THEME" ]; then
+        # A copy, not a link: installing a theme writes /psp/theme.swf, which
+        # through a link would overwrite the asset it points at.
+        cp "$THEME" "$FIXTURES/rootfs/psp/theme.swf"
+    else
+        echo "no $THEME — the panel will show no theme until one is installed" >&2
+    fi
 fi
 
 # Widget SWFs (chumby's, gitignored) sit in swf-assets/dash/widgets/; the
@@ -30,6 +34,13 @@ fi
 mkdir -p "$FIXTURES/rootfs/usr/widgets"
 for w in "$DIR"/swf-assets/dash/widgets/*.swf; do
     [ -f "$w" ] && ln -sf "$w" "$FIXTURES/rootfs/usr/widgets/$(basename "$w")"
+done
+
+# Themes for the picker: swf-assets/dash/themes/*.swf, offered through the
+# generated catalog (core/src/chumby/dash_theme.rs).
+mkdir -p "$FIXTURES/rootfs/psp/themes"
+for t in "$DIR"/swf-assets/dash/themes/*.swf; do
+    [ -f "$t" ] && ln -sf "$t" "$FIXTURES/rootfs/psp/themes/$(basename "$t")"
 done
 
 [ -p "$CTL" ] || mkfifo -m 600 "$CTL" || exit 1
