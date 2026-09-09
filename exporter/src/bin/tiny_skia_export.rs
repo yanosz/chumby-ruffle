@@ -40,10 +40,13 @@ fn main() {
     }
 
     let mut render_ms: Vec<f64> = Vec::with_capacity(frames as usize);
+    let mut frame_ms: Vec<f64> = Vec::with_capacity(frames as usize);
     for i in 0..frames {
         let mut p = player.lock().unwrap();
         p.preload(&mut ExecutionLimit::none());
+        let t0 = Instant::now();
         p.run_frame();
+        frame_ms.push(t0.elapsed().as_secs_f64() * 1000.0);
         let t0 = Instant::now();
         p.render();
         render_ms.push(t0.elapsed().as_secs_f64() * 1000.0);
@@ -68,6 +71,10 @@ fn main() {
          min {min:.2}  max {max:.2}  (= {:.1} fps at mean)",
         1000.0 / mean
     );
+    // Script and display-list work per frame, timed apart from render():
+    // on the appliance both run on one thread, so their sum is the floor.
+    let frame_mean: f64 = frame_ms.iter().sum::<f64>() / n;
+    println!("run_frame(): mean {frame_mean:.2} ms");
     if save {
         println!("wrote {frames} frame(s) to {out_dir}/");
     }

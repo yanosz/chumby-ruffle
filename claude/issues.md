@@ -557,7 +557,7 @@ now for silent cancellers.
 Number: 11
 Timestamp: 2026-09-09, 19:10
 Title: Dash: the Space Theme costs a full core on the DSI box.
-Status: open — step 3 item, proposed first in step 4 because it can invalidate the rest
+Status: diagnosed 2026-09-09 — full-frame masks, one per text field; fix proposed, CHECKPOINT 4 open
 Description: `claude/dash-panel-survey.md` §4: on chumby-pi-3 (1024x600 DSI,
 tiny-skia) the Dash panel itself holds 12 fps at 53 % of a core, but
 `default_theme.swf` alone runs at 9.5 fps and 105 %; on the desktop the theme
@@ -576,6 +576,66 @@ frame cap (deferred by Jan). Size: M (measure with `top -H` and
 `RUST_LOG=ruffle_render_tiny_skia=trace`-class instrumentation on the box, then
 decide). Patch surface: none for the measurement; a render-scale knob would
 touch `desktop/src/cli.rs` (already a hook file).
+
+Diagnosis, 2026-09-09 (step 4, item 11). Method: `exporter/src/bin/tiny_skia_export.rs`
+now also times `run_frame()` apart from `render()` (uncommitted); a temporary
+`CHUMBY_TS_NOMASK` guard on the four mask entry points (reverted) switched
+masks off; `CHUMBY_TS_STATS=1` printed the backend's per-frame counters;
+thread view from `top -H` on the box.
+
+1. **Single thread.** In the kiosk the player's main thread is at 99.9 %
+   with the theme, 64–78 % with the classic; render, script and present are
+   serial.
+2. **Script is not it.** `run_frame()` is 4.7–4.9 ms per frame for the
+   theme and the Dash panel, 7.2 ms for the classic, on the box.
+3. **Masks are.** Per-frame draw counts at 1024x571: theme 205 shapes,
+   110 rects, **56 masks**; Dash panel 108 / 16 / 8; classic 11 / 2 / 2.
+   Ruffle clips every `EditText` to its bounds with `push_mask` +
+   `draw_rect` (`core/src/display_object/edit_text.rs:2735-2763`), and the
+   theme has 30 text fields plus list and panel masks. In the backend each
+   mask is a full-frame `tiny_skia::Mask` (`render/tiny_skia/src/lib.rs:164-168`
+   `push` → `take` → `Mask::clear()` on a 1024x571 spare), intersected with
+   the enclosing clip by a full-frame byte loop (`intersect`, `:214-222`)
+   whenever the theme's own panel mask is active. Fourteen of the 56 are
+   degenerate (tiny-skia warns "empty paths … cannot be filled" ~14x per
+   frame) and still pay the full price.
+4. **Numbers** (`tiny_skia_export`, 30–60 frames, `render()` mean):
+
+   | | masks on | masks off |
+   |---|---|---|
+   | theme, desktop x86, 1023x571 | 8.0 ms | 5.0 ms |
+   | theme, box (aarch64 release, not dist) | **178.7 ms** | **59.6 ms** |
+   | Dash panel, box | 12.8 ms | 11.0 ms |
+   | classic, box, 800x600 | 25.3 ms | 18.8 ms |
+
+   The July dist build measured 49.6 ms for the theme (§4 of the survey's
+   method, same box) — `dist` (LTO) versus `release` and the mask commits
+   since (`2cfa93297` "real mask clipping") both play in; the kiosk's 0.9.5
+   sits between the two at ~100 ms per frame.
+5. **The rest is present.** Kiosk CPU per frame minus render minus script
+   leaves ~35–55 ms for every SWF on the 1024x600 DSI — the software
+   present path (`desktop/src/gui/controller.rs`, softbuffer → cage/pixman).
+   Not measured on its own yet; it caps the classic too and is a separate
+   item.
+6. **Renderer check** (Jan's rule): the theme's 24th frame from
+   `tiny_skia_export` and from the wgpu `exporter` are identical except
+   that tiny-skia draws a faint 1 px grey outline around the empty widget
+   area (roughly x 160–1015, y 270–560) that wgpu does not — most likely
+   the same "single outline" as issue 2.
+
+Proposal (CHECKPOINT 4): **bounded masks** in `render/tiny_skia/src/lib.rs`
+— our own crate, additions commit, no upstream surface. `MaskStack` keeps
+the bounding box of the geometry filled into each `Building` mask
+(`render_shape`, `draw_rect`, `render_bitmap` mask branches all know their
+transformed bounds); `take()` zeroes only the previous box instead of
+`Mask::clear()`; `intersect` loops only over the new box (outside it the
+product is already zero); an empty box means the clip is empty and clipped
+draws can be skipped. Expected: the theme's render on the box from ~179 ms
+toward ~60 ms, the classic from 25 toward 19; the 14 degenerate masks
+become free. Size S–M, ~80 lines plus tests next to the three existing
+mask tests. Consumers of the touched code: the four mask entry points,
+`intersect`, the three mask-geometry branches, `clip()` at the five fill
+sites — all in this one file.
 
 ---
 
