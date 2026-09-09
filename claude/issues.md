@@ -672,7 +672,7 @@ cap, with the present path (~35–55 ms/frame) as the remaining ceiling.
 Number: 12
 Timestamp: 2026-09-09, 19:10
 Title: Dash: reach the home screen offline (the Dash's FR7).
-Status: home screen reached on dev 2026-09-09 with fixtures only (`fixtures-dash/`, `run-dash.sh`); channels/widgets (XAPI) still open — see below
+Status: done on dev 2026-09-09 — home screen with fixtures only, then the XAPI channel with four fixtures and a wildcard lookup; the widget itself waits on issue 14
 Description: The classic's offline route is `-Pbuiltin=1`; on the Dash
 `builtin` makes the startup wizard *quit* (`startup/StartupPanel.as:130-139,
 183-192, 214-223`, `fscommand("quit")` at `:262`). The route that reaches
@@ -763,6 +763,32 @@ and `externalmusic/sources.xml` on `files.chumby.com` (issue 16), and the
 `exec://` command arriving percent-encoded (`nice -n 10 chumbthumb%20…`),
 which the manifest prefix match survives but a Rust reimplementation must
 decode — noted for issue 13.
+
+Second half, 2026-09-09: the XAPI channel. Four answers under
+`fixtures-dash/http/xml.chumby.com/xapis/` — `auth/create`
+(`<oauth_session valid_for="86400">local</oauth_session>`; any non-empty
+key authenticates, `XAPI.as:93-129`), `device/index/_`, `profile/show/1`,
+`profile/list/_` — shaped after the parsers cited in each file's comment.
+The one code change: `FixtureHost::fetch` now falls back to a file named
+`_` in the same directory when the exact path misses (`fixture.rs`, test
+`test_http_fixture_wildcard_last_segment`), because the Dash ends two of
+these paths in the device GUID, which is per box. The exact file still
+wins; every other fixture path is unaffected (a miss without a `_` sibling
+stays a miss). The POST from `XML.sendAndLoad` reaches the same intercept
+as a GET. Log of the run: `auth/create` HIT → `device/index/<GUID>` HIT →
+`profile/show/1` HIT → `profile/list/<GUID>` HIT →
+`_startSlave("file:////usr/widgets/builtinclock.swf", "<object>")` with
+`_setSlaveVar(_chumby_widget_stage_width/height, 320/240)` — the theme
+then shows "CLOCK" in its widget slot and the picker lists
+"CHUMBYPI-CHANNEL / Clock / the built-in clock". The widget is not drawn:
+`_startSlave` is the fork's logging stub (issue 14).
+
+Also new in that run: once the channel plays, `WidgetSequencer` reads the
+slave player's memory through `util/VSZ.as:3-13` — `cat /proc/<pid>/stat |
+cut -d " " -f 23` with the pid from `/var/run/chumbyflashplayer.pid`; the
+file is absent, so the command is `cat /proc/undefined/stat …`, issued
+every second (32 times in 30 s). Harmless (empty answer → `Number("") = 0`)
+but noisy; a pid fixture or a manifest entry belongs to issue 13.
 
 ---
 

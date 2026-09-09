@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- XAPI.authorizeDLA (chumbynetwork/XAPI.as:59-129): any non-empty key
+     marks the session authenticated; valid_for is seconds. -->
+<oauth_session valid_for="86400">local</oauth_session>

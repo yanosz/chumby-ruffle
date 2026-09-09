@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Profile.parseXML (chumbynetwork/Profile.as:98-137), WidgetInstance.fromXML
+     (WidgetInstance.as:114-126), Widget.fromXML (Widget.as:120-146). A
+     file:// movie href is used as is (Widget.as:102-110). -->
+<profile id="1">
+  <name>chumbypi-channel</name>
+  <info master="true"/>
+  <widget_instances>
+    <widget_instance id="1">
+      <name>Clock</name>
+      <info created=""/>
+      <play mode="default" time="30"/>
+      <rating value="0"/>
+      <widget id="1">
+        <name>Clock</name>
+        <description>the built-in clock</description>
+        <version>1</version>
+        <play mode="default" time="30"/>
+        <security access="public" sendable="false" deleteable="false" virtualable="false" previewable="true" overlay="false"/>
+        <user username="chumbypi"/>
+        <thumbnail href="file:////usr/widgets/builtinclock.jpg"/>
+        <movie href="file:////usr/widgets/builtinclock.swf"/>
+        <rating value="0" count="0"/>
+      </widget>
+      <parameters/>
+    </widget_instance>
+  </widget_instances>
+</profile>

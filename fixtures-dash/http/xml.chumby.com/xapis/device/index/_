@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Device.parseXML (chumbynetwork/Device.as:110-121). The request path
+     ends in the device GUID; "_" answers any last segment. -->
+<chumby anonymous="false">
+  <name>chumbypi</name>
+  <user id="1">chumbypi</user>
+  <profile id="1">chumbypi-channel</profile>
+</chumby>

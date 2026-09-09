@@ -422,7 +422,14 @@ impl ChumbyHost for FixtureHost {
         // path only (the panel requests e.g. "/xml/chumbies/?id=...").
         let path = path.split('?').next().unwrap_or("").trim_end_matches('/');
         let file = self.root.join("http").join(host).join(path);
-        match std::fs::read(&file) {
+        // A file named "_" answers any last path segment: the Dash's XAPI
+        // ends its paths in the device GUID (xapis/device/index/<guid>),
+        // which is per box. The exact file still wins.
+        let read = std::fs::read(&file).or_else(|e| match file.file_name() {
+            Some(name) if name != "_" => std::fs::read(file.with_file_name("_")),
+            _ => Err(e),
+        });
+        match read {
             Ok(body) => Some(Ok(self.expand_tokens(body))),
             Err(_) => {
                 tracing::warn!(target: "chumby_host",
@@ -863,6 +870,33 @@ mod tests {
         ));
         assert!(matches!(
             host.fetch("http://podcast.chumby.com/podcast/cbs/list"),
+            Some(Err(HostError::NotFound(_)))
+        ));
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// A "_" fixture answers any last path segment (the Dash's per-box GUID
+    /// in XAPI paths); an exact file wins, and a miss without one stays a miss.
+    #[test]
+    fn test_http_fixture_wildcard_last_segment() {
+        let root = std::env::temp_dir()
+            .join(format!("chumby-fixture-wildcard-test-{}", std::process::id()));
+        let dir = root.join("http/xml.chumby.com/xapis/device/index");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("_"), b"<chumby>any</chumby>").unwrap();
+        std::fs::write(dir.join("EXACT"), b"<chumby>exact</chumby>").unwrap();
+
+        let host = FixtureHost::new(&root);
+        let any = host
+            .fetch("http://xml.chumby.com/xapis/device/index/ABCD-1234?oauth_nonce=1")
+            .unwrap()
+            .unwrap();
+        assert_eq!(any, b"<chumby>any</chumby>");
+        let exact = host.fetch("http://xml.chumby.com/xapis/device/index/EXACT").unwrap().unwrap();
+        assert_eq!(exact, b"<chumby>exact</chumby>");
+        assert!(matches!(
+            host.fetch("http://xml.chumby.com/xapis/profile/list/ABCD"),
             Some(Err(HostError::NotFound(_)))
         ));
 

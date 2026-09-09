@@ -172,9 +172,10 @@ against `fixtures-dash/`; it wants `swf-assets/dash/controlpanel.swf` and
 it reaches its home screen with the Space Theme on the classic `authorize`
 answer plus two `/psp` files (`securityQuestion`, `securityAnswer`) that
 keep the startup wizard away; the `builtin=1` FlashVar the classic uses
-offline makes the Dash *quit* instead (fork issue 12). Channels and widgets
-come through the Dash's XAPI endpoints, which have no fixtures yet — the
-theme shows "LOADING…" where they would be.
+offline makes the Dash *quit* instead (fork issue 12). Channels come through
+the Dash's XAPI endpoints, answered from `fixtures-dash/http/…/xapis/`
+(a `_` file stands in for the per-box GUID segment); the widget in the
+theme's rectangle is fork issue 14.
 
 ## 4a. The decompiled panel
 
