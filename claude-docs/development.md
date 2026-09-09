@@ -146,6 +146,10 @@ trip). Useful environment:
 RUST_LOG=warn,chumby_host=info          # every host call, args and result
 RUST_LOG=warn,avm_trace=trace           # the panel's own trace() output
 RUST_LOG=warn,chumby_pick=debug         # what a click actually hit
+RUST_LOG=warn,ruffle_core::avm1::runtime=error,chumby_host=info
+                                        # the Dash panel only: drops ~2 300
+                                        # harmless "Avm1::pop: Stack underflow"
+                                        # lines a run (fork claude/issues.md 18)
 ```
 
 `chumby_pick=debug` is the tool for UI-policy work: a missed click and an

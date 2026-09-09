@@ -1083,7 +1083,7 @@ classic run clean and never calls any of them.
 Number: 18
 Timestamp: 2026-09-09, 19:10
 Title: Dash: 2 267 AVM1 stack-underflow warnings in 45 s.
-Status: open — step 3 item, investigation
+Status: diagnosed 2026-09-09 — benign log noise from the AS2 class preamble; no code change, silence it with a log filter
 Description: Survey §3: `Avm1::pop: Stack underflow` 2 267 times during the
 panel's first 45 s and 64 times for the theme alone, almost all during
 `DoInitAction` class initialisation (1 332 such tags, SWF version 8). No
@@ -1093,6 +1093,44 @@ silent branch. Diagnose with `RUST_LOG=ruffle_core::avm1=trace` on the theme
 (64 warnings, small); if it is a Ruffle opcode-semantics gap it is an
 upstream bug and, if fixed locally, lands in the edits commit. Size: S to
 diagnose, unknown to fix.
+
+Diagnosed, 2026-09-09. Method: two temporary patches to upstream files
+(both reverted, nothing committed) — first a backtrace at
+`avm1::runtime::Avm1::pop`'s empty branch to name the caller, then a
+thread-local ring of the last twenty opcodes and the stack depth before
+each, logged at the underflow.
+
+**Every underflow is an `ActionPop`.** 64 of 64 in the theme and **2 331 of
+2 331 in the panel** end in `Pop[0]` — the discard opcode finding an empty
+stack. Nothing reads the `Undefined` it gets back, because a discard has no
+consumer, so no panel behaviour can depend on it. That is the whole
+finding: it is noise, not a defect.
+
+Where it comes from: the `__Packages` class preamble. The twenty-opcode
+window of the commonest case (48 of the theme's 64) is the package guard
+chain the AS2 compiler emits per class file —
+
+    Push "_global" | GetVariable | Push "com" | GetMember | Not | Not |
+    If → skip | Pop | (same for _global.com.chumby) | Pop | …
+
+Each guard's `If` consumes the coerced boolean and the trailing `Pop`
+expects one value more than the guard pushed, so a block with N guards
+needs N leftovers on entry and the last ones come up empty. Ruffle already
+treats unbalanced AVM1 bytecode as normal: `Avm1::clear()` exists for
+exactly this and says so in its own comment ("AVM1 bytecode may leave the
+stack unbalanced … call after executing bytecode to clear any left-overs").
+The classic panel never triggers it because it has no `__Packages` blocks —
+its code is frame scripts.
+
+**No code change.** Silencing it would mean editing `avm1/runtime.rs`,
+which is not in the patch surface today, to spare a log line — the wrong
+trade against every future rebase. The log filter does it for free:
+
+    RUST_LOG=warn,ruffle_core::avm1::runtime=error,chumby_host=info
+
+Measured on a 35 s Dash run: 0 underflow lines, the log down from ~2 500
+lines to 235, all 155 `chumby_host` lines intact. Recorded in
+`claude-docs/development.md` beside the other RUST_LOG recipes.
 
 ---
 

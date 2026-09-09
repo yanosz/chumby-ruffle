@@ -465,8 +465,10 @@ no FlashVars, 45 s timeout:
 - heartbeat every 15 s (`_fscommand2` pair + `/tmp/movieheartbeat`), so the
   main loop is alive.
 - **2 267 `Avm1::pop: Stack underflow` warnings** in 45 s (64 for the theme
-  alone), nearly all during class initialisation. Not diagnosed; noted as a
-  candidate fork issue.
+  alone), all during class initialisation. Diagnosed 2026-09-09 (issue 18):
+  every one is an `ActionPop` discard on an empty stack, from the
+  `__Packages` package-guard preamble; nothing reads the value, so it is
+  noise. Silence with `ruffle_core::avm1::runtime=error` in `RUST_LOG`.
 - one `stub: AVM1 System.security.allowDomain()`.
 
 `default_theme.swf` alone: runs, renders its layout (TIME / WEATHER /
