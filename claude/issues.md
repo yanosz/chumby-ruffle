@@ -887,7 +887,7 @@ has been issued in a run yet; add them when they are. The theme-picker
 Number: 14
 Timestamp: 2026-09-09, 19:10
 Title: Dash: widgets are composed inside a theme-chosen rectangle.
-Status: open — step 3 item
+Status: done on dev 2026-09-09 — `dash_widget.rs` pins `WidgetSequencer._isChumby` to false, the panel's own proxy branch does the rest
 Description: On a device `WidgetSequencer.playCurrentWidget` takes the
 `_startSlave` branch (`widgetbrowser/WidgetSequencer.as:353-360`), which the
 fork does not run (requirements FR2 M6); the classic gets its widgets through
@@ -904,6 +904,35 @@ slave vars. Options: make `WidgetSequencer._isChumby` false while
 answer `_startSlave` by performing the proxy load. Widgets stay 320x240
 content (`:364`) scaled into the mask, so the classic widget set is reusable.
 Size: M. Patch surface: additions (a prototype surgery next to `intro.rs`).
+
+Done, 2026-09-09. `_isChumby` is an instance field assigned once in the
+constructor from `Chumby.isChumby` (`WidgetSequencer.as:67`) and read at
+`:70` (which loader to set up), `:351` (slave or proxy load) and `:572`
+(how to place it); no other class reads it, and `CPMain.isChumby()` is a
+different thing. `core/src/chumby/dash_widget.rs` adds a virtual
+`_isChumby` to `com.chumby.controlpanel.widgetbrowser.WidgetSequencer.prototype`
+through `addProperty` — getter false, setter a no-op that swallows the
+constructor's assignment — one-shot with retry on the native-call cadence
+like `intro.rs`; the classic has no such class, so the lookup never
+succeeds there (`pinned=0` in its log). With that the Dash takes its own
+off-device branch unchanged: `MovieClipLoader` into `__widgetProxy` under
+`_lockroot`, `onLoadComplete` injects the `_chumby_*` parameters and calls
+`setPositionAndSize`, which puts the 320x240 widget at the theme's
+rectangle by position and scale (`:596-600`); `checkWidgetDoneProxy` polls
+the clip. The device-only calls (`_startSlave`, `_setDisplayRect`,
+`_setSlaveVar`, `_grantSlavePrivileges`, `prepareWidgetSettings`) are no
+longer made; the one slave-var read left is `_getSlaveVar("_chumby_widget_state")`
+from `WidgetStateKeeper`, answered `Undefined`, harmless.
+
+Run: `rootfs HIT file:////usr/widgets/builtinclock.swf` (the classic's
+built-in clock from the backup, linked in by `run-dash.sh` from
+`swf-assets/dash/widgets/`), no `_startSlave`, and the clock draws inside
+the Space Theme's widget area at 134,232 with the theme's PREV / PIN / NEXT
+controls above it. Classic regression run clean. Not covered: the
+`ExtendedEvents.WidgetLoadStatus` → `onEvent("loadstatus")` path (slave
+only: `_getSWFDimensions`, aspect ratio into `WidgetMask`) — on the proxy
+path the mask keeps the theme's rectangle, which is what the built-in
+clock needs; a widget with an odd aspect ratio may want it later.
 
 ---
 

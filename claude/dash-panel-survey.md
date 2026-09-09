@@ -240,7 +240,7 @@ What the player must provide for that path (against the fork today):
 | `_fileExists` on the five paths | `ThemeLoader.as:63` | dispatched (5,53), rootfs-backed |
 | `MovieClipLoader.loadClip("file:///psp/theme.swf")` into a `_lockroot` child | `ThemeLoader.as:74-89` | `core/src/chumby/navigator.rs:47-67` resolves `file://` and scheme-less absolute URLs against the virtual rootfs, falling through to disk on a miss — **verified** 2026-09-09: `rootfs HIT file:////psp/theme.swf`, theme on screen (issue 12) |
 | `_enableSlaveUpdates`, `_fillFrameBufferBytes`, `putFile /tmp/cpready` | `:86-93` | dispatched (5,119 / 5,385 / 5,51) |
-| widget sub-rectangle via `_setDisplayRect` / `_setDisplayRectEventTranslate` and slave vars | `WidgetSequencer.as:606-610` | ids dispatched; **semantics** (widget composed inside a rectangle, not full screen) are new to the fork's in-process widget loader |
+| widget sub-rectangle via `_setDisplayRect` / `_setDisplayRectEventTranslate` and slave vars | `WidgetSequencer.as:606-610` | **done** 2026-09-09 (issue 14): the Dash's own proxy branch places the widget by position and scale once `_isChumby` reads false (`dash_widget.rs`) |
 | `sys://` local-file scheme for photos | theme `PhotoHolder.as:25`, panel `CacheManager.as:132`, `USBPhotoPanelItemInfo.as:22` | not handled (grep `sys:` in `core/src/chumby/`: none) |
 | `chumbthumb` exec (photo resize) | `image/ImageResizer2.as:8` | no fixture |
 | cookies: natives 5,160-164 | `ThemeCallbacks.as:309-346` | dispatched |

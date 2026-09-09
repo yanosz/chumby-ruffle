@@ -174,8 +174,9 @@ answer plus two `/psp` files (`securityQuestion`, `securityAnswer`) that
 keep the startup wizard away; the `builtin=1` FlashVar the classic uses
 offline makes the Dash *quit* instead (fork issue 12). Channels come through
 the Dash's XAPI endpoints, answered from `fixtures-dash/http/…/xapis/`
-(a `_` file stands in for the per-box GUID segment); the widget in the
-theme's rectangle is fork issue 14.
+(a `_` file stands in for the per-box GUID segment); the widget draws
+in the theme's rectangle through the panel's own proxy branch
+(`dash_widget.rs`); widget SWFs go in `swf-assets/dash/widgets/`.
 
 ## 4a. The decompiled panel
 

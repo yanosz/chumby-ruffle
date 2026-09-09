@@ -28,3 +28,7 @@ from the system tzdata, `core/src/chumby/tzdump.rs`), `list_mounts` (the
 `rootfs/mnt/usb*` entries that resolve) and the slave-player memory poll
 (empty: there is no slave). `chumbthumb` is a manifest stub answering its
 failure status.
+
+Widget SWFs live in `swf-assets/dash/widgets/` (gitignored); `run-dash.sh`
+links them into `rootfs/usr/widgets/`, where the channel fixture's
+`file:////usr/widgets/<name>.swf` hrefs resolve.

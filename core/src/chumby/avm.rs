@@ -84,6 +84,8 @@ pub fn method<'gc>(
     super::empty_channel::apply(activation);
     // One-shot: a silent (type="none") alarm must not cancel a sounding one.
     super::alarm_guard::apply(activation);
+    // One-shot: the Dash's widgets load on its proxy path, not the slave.
+    super::dash_widget::apply(activation);
 
     let result = dispatch(activation, index, name, args, &host_args)?;
 
