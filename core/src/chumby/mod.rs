@@ -29,6 +29,7 @@ pub mod avm;
 pub mod backup_alarm;
 pub mod brightness;
 pub mod config;
+pub mod dash_theme;
 pub mod dash_widget;
 pub mod empty_channel;
 pub mod fixture;

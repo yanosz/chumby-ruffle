@@ -954,7 +954,7 @@ is the same one-liner. Size: S. Photos as a feature (USB scan, Photobucket,
 Number: 16
 Timestamp: 2026-09-09, 19:10
 Title: Dash: chumby.com surface to intercept (NFR6).
-Status: open — step 3 item
+Status: done on dev 2026-09-09 — the self-updater and music manifest answered from fixtures, the theme catalog generated from the rootfs, the picker's file commands interpreted in Rust
 Description: Survey §2.6. Beyond `xml.chumby.com` (issue 12) the Dash talks to
 `files.chumby.com/dash/$RELEASE$controlpanel/controlpanel.xml` — a **panel
 self-updater** 30 min after start and daily (`structure/UpdateMonitorCP.as:5-27`;
@@ -969,6 +969,61 @@ plus `chumby.weather.com`, `images.weather.com`, `sonyyume.accu-weather.com`
 (dead third parties: clean failure). Verify `is_chumby_host` covers
 `files.chumby.com` and `content.chumby.com`. Size: S–M, fixtures under
 `fixtures/http/`. Patch surface: none.
+
+Done, 2026-09-09. Two static fixtures under
+`fixtures-dash/http/files.chumby.com/dash/production/`:
+`controlpanel/controlpanel.xml` with an empty `build` — `UpdateMonitorCP`
+(`structure/UpdateMonitorCP.as:29-54`) compares it against the running
+version and treats empty as "no update", so the **panel self-updater can
+never fire**; and `externalmusic/sources.xml` as an empty `<MusicSources/>`
+(`music/ExternalMusicSources.as:54`). The six `dash/icons/*.png` stay
+missing on purpose: a missed icon load leaves the music row's art blank and
+costs nothing, and inventing chumby's artwork would be worse than a gap.
+
+**The theme catalog is generated, not canned** —
+`core/src/chumby/dash_theme.rs` (240 lines with tests). `FixtureHost::fetch`
+routes `files.chumby.com/dash/<release>/themes/themes.xml` to
+`catalog_xml`, which lists every `*.swf` in `/psp/themes` of the virtual
+rootfs as a `<theme>` with the md5 the panel will check, a `file:///` url,
+and a `.jpg`/`.png` sibling as `thumbnailURL` if there is one; the name is
+the filename with underscores as spaces (`Space_Theme.swf` → "Space
+Theme", chumby's own label). So a theme dropped into the tree is offered by
+the in-panel picker with no server at all — the appliance half of the
+user-supplied-theme route (chumby-pi issue 16), and the reason the
+`externalthemes.xml` stick is now optional rather than the only way.
+
+**The picker's four command shapes are interpreted on the rootfs**, in Rust
+rather than a shell (NFR2), in the same module: `download_theme <url> <md5>`
+copies a `file://` source to `/tmp/theme.swf` when the md5 matches and
+answers the script's own `<download_theme error="…"/>` (anything not
+`file://` is "theme not found", so nothing is ever fetched from
+chumby.com); `cp <src> <dst>`, `rm <paths>`, `sync` and `echo $?` are
+applied step by step for the exact sequences the picker and the scheduler
+updater issue, and a sequence with a step we do not know falls through
+untouched rather than being half-executed.
+
+Verified on the desktop, driving the real UI: bend → the popup bar's themes
+button (`chumby_pick` names `_popupBar.themesButton.b`) → "Theme Selector"
+lists **space theme** from the generated catalog → picking it runs
+`/psp/download_theme file:////psp/themes/Space_Theme.swf <md5>` then
+`cp /tmp/theme.swf /psp/theme.swf; rm …; sync; echo $?` and the panel
+reloads the theme (`rootfs HIT file:////psp/theme.swf`). Unit tests cover
+the install writing the new bytes, a checksum mismatch, a non-`file://` url
+and the delete. 53 chumby tests pass.
+
+Two things the runs taught, both recorded rather than fixed here:
+
+- **`/psp/theme.swf` must never be a symlink to an asset.** The launcher
+  used to link it at `swf-assets/dash/default_theme.swf`; installing a
+  theme writes that path, so the panel wrote *through* the link into the
+  source copy (same bytes this time, silent corruption with any other
+  theme). `run-dash.sh` now seeds it with a copy. The appliance's own
+  seeding (chumby-pi issue 14/16) must do the same.
+- **Without an installed theme the Dash has no home screen**: `ThemeLoader`
+  finds none of its five paths, the load never completes, and the screen
+  shows only the widget at 0,0 with the popup bar unreachable — so the
+  picker cannot be the first-boot route. chumby's own `install_chumby.sh:7`
+  seeds `/psp/theme.swf` for exactly this reason.
 
 ---
 

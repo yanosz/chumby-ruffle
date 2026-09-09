@@ -390,6 +390,10 @@ impl ChumbyHost for FixtureHost {
                 }
             });
         }
+        // Dash theme picker: download_theme and the cp/rm sequences.
+        if let Some(out) = super::dash_theme::exec(&self.fs, command) {
+            return Ok(out);
+        }
         // Dash `usb/USBMediaEvents.as:69` and three panels: the USB volumes.
         if command == "list_mounts" {
             return Ok(self.mounts_xml().into_bytes());
@@ -483,6 +487,10 @@ impl ChumbyHost for FixtureHost {
         // Strip query string and trailing slash: fixture files are keyed by
         // path only (the panel requests e.g. "/xml/chumbies/?id=...").
         let path = path.split('?').next().unwrap_or("").trim_end_matches('/');
+        // The Dash's theme catalog is derived from the rootfs themes directory.
+        if host == "files.chumby.com" && super::dash_theme::is_catalog_path(path) {
+            return Some(Ok(super::dash_theme::catalog_xml(&self.fs).into_bytes()));
+        }
         let file = self.root.join("http").join(host).join(path);
         // A file named "_" answers any last path segment: the Dash's XAPI
         // ends its paths in the device GUID (xapis/device/index/<guid>),
