@@ -10,3 +10,6 @@ killall bivlcored	zero.txt
 /mnt/storage/chumbrowser/stop_chumbrowser	empty.txt
 ap_scan	empty.txt
 network_adapter_list.sh	empty.txt
+# chumbthumb (image/ImageResizer2.as): photo resize for the theme's photo
+# module; not implemented, "1" is its failure status — the theme shows no photo.
+chumbthumb	one.txt

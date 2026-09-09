@@ -53,7 +53,8 @@ and on the Pi.
 | `exec/manifest.txt` | `_backtick` (5,52) and `exec://` commands | TAB-separated `command-prefix<TAB>response-file`; longest prefix wins; comment lines start with `#` |
 | `exec/*.{txt,xml}` | command stdout bodies | edit the file named in the manifest |
 | `http/<host>/<path>` | HTTP fetches to chumby hosts (`*.chumby.com`, `127.0.0.1`, `localhost`) | file at query-stripped, trailing-slash-stripped path; e.g. `http://xml.chumby.com/xml/chumbies/?id=…` → `http/xml.chumby.com/xml/chumbies` |
-| (in code) | stateful natives (volume, mute, balance, touchclick, brightness, slave vars, platform=ironforge, env vars) | `core/src/chumby/fixture.rs` in the ruffle fork — `native()` match |
+| `platform` | the hardware config name `_getPlatform` answers: `ironforge` here, `yume` in `fixtures-dash/` |
+| (in code) | stateful natives (volume, mute, balance, touchclick, brightness, slave vars, env vars) | `core/src/chumby/fixture.rs` in the ruffle fork — `native()` match |
 
 ## Current contents
 
@@ -124,3 +125,7 @@ The control panel bar is summoned with the simulated bend sensor: type
 /tmp/chumby-ctl`, or press Home with the window focused. Verified
 reachable on fixtures: alarms (B5), Music → My Streams (C0/C2),
 Settings → Volume (E0/E1) — see `verify-screens.sh`.
+
+Exec keys match after a leading `nice -n <n> ` is stripped and `%XX`
+escapes are decoded (the Dash panel sends both), so a manifest prefix is the
+bare command: `curl`, not `nice -n 10 curl`.

@@ -24,6 +24,8 @@ pub struct FixtureHost {
     fs: RootFs,
     /// exec manifest: (command prefix, response file), longest prefix wins.
     exec_manifest: Vec<(String, PathBuf)>,
+    /// `_getPlatform` / CONFIGNAME answer, from `<root>/platform`.
+    platform: String,
     /// Master/slave variable exchange, `_setSlaveVar` (5,80) /
     /// `_getSlaveVar` (5,81). `_chumby_widget_done` defaults to "true" so
     /// intro/widget handoffs never hang.
@@ -46,8 +48,19 @@ impl FixtureHost {
         let root = root.canonicalize().unwrap_or(root);
         let rootfs_path = root.join("rootfs");
         let exec_manifest = load_exec_manifest(&root.join("exec"));
+        // `<root>/platform`: the hardware config name `_getPlatform` (5,202)
+        // answers — "ironforge" for the classic tree, "yume" for the Dash,
+        // whose InternationalDate applies time-zone transitions only there.
+        let platform = match std::fs::read_to_string(root.join("platform")) {
+            Ok(p) => p.trim().to_owned(),
+            Err(_) => {
+                tracing::warn!(target: "chumby_host",
+                    "no {}/platform — answering _getPlatform with ironforge", root.display());
+                "ironforge".to_owned()
+            }
+        };
         tracing::info!(target: "chumby_host",
-            "FixtureHost at {} ({} exec fixtures)", root.display(), exec_manifest.len());
+            "FixtureHost at {} ({} exec fixtures, platform {platform})", root.display(), exec_manifest.len());
 
         // Real hardware's /tmp is a ramdisk; ours persists. The resume
         // banner (/tmp/musicsource) must not survive a restart:
@@ -89,6 +102,7 @@ impl FixtureHost {
                 hide_local_profile: remote_live && !config.merge_local_remote_widgets,
             },
             exec_manifest,
+            platform,
             slave_vars: Mutex::new(HashMap::new()),
             native_state: Mutex::new(initial_state),
             audio: Mutex::new(AudioPlayer::new(rootfs_path.clone(), config.volume_cap)),
@@ -103,6 +117,22 @@ impl FixtureHost {
     /// directory. Fixture files must not hardcode install paths (the
     /// profile XML references widget SWFs by `file://` URL); the token
     /// keeps the same fixture tree working on the dev box and the Pi.
+    /// `<mounts>` for the `/mnt/usb`, `usb2`…`usb4` entries that resolve to
+    /// a directory — on the appliance a symlink onto the real mount, so an
+    /// unplugged stick lists nothing. `port` is what the Dash keys volumes by
+    /// (`USBMediaEvents.gotMountList`).
+    fn mounts_xml(&self) -> String {
+        let mut out = String::from("<mounts>");
+        for port in 1..=4u8 {
+            let point = if port == 1 { "/mnt/usb".to_owned() } else { format!("/mnt/usb{port}") };
+            if self.fs.resolve(&point).is_some_and(|p| p.is_dir()) {
+                out.push_str(&format!("<mount point=\"{point}\" port=\"{port}\"/>"));
+            }
+        }
+        out.push_str("</mounts>\n");
+        out
+    }
+
     fn expand_tokens(&self, body: Vec<u8>) -> Vec<u8> {
         const TOKEN: &[u8] = b"{FIXTURES}";
         if !body.windows(TOKEN.len()).any(|w| w == TOKEN) {
@@ -119,6 +149,13 @@ impl FixtureHost {
         out.extend_from_slice(rest);
         out
     }
+}
+
+/// The command behind a `nice -n <n> ` prefix, or the command itself.
+fn strip_nice(command: &str) -> &str {
+    let Some(rest) = command.strip_prefix("nice -n ") else { return command };
+    let rest = rest.trim_start_matches(|c: char| c.is_ascii_digit() || c == '-');
+    rest.strip_prefix(' ').unwrap_or(command)
 }
 
 fn load_exec_manifest(dir: &Path) -> Vec<(String, PathBuf)> {
@@ -145,15 +182,15 @@ fn load_exec_manifest(dir: &Path) -> Vec<(String, PathBuf)> {
 impl ChumbyHost for FixtureHost {
     fn native(&self, _index: u16, name: &str, args: &[HostValue]) -> HostValue {
         match name {
-            // (5,202): the hardware config name; we emulate a Chumby Classic.
-            "_getPlatform" => HostValue::String("ironforge".into()),
+            // (5,202): the hardware config name, per fixture tree.
+            "_getPlatform" => HostValue::String(self.platform.clone()),
             // (5,205): the two env vars the panel reads at startup.
             "_getEnvironment" => match args.first() {
                 Some(HostValue::String(var)) if var == "LANGUAGE" => {
                     HostValue::String("en_US".into())
                 }
                 Some(HostValue::String(var)) if var == "CONFIGNAME" => {
-                    HostValue::String("ironforge".into())
+                    HostValue::String(self.platform.clone())
                 }
                 _ => HostValue::String(String::new()),
             },
@@ -339,6 +376,31 @@ impl ChumbyHost for FixtureHost {
     }
 
     fn exec(&self, command: &str) -> Result<Vec<u8>, HostError> {
+        // `nice -n N ` is how AsynchronousCommand wraps everything (Dash
+        // `util/AsynchronousCommand.as:44`, classic widget cache alike); the
+        // command is what follows it.
+        let command = strip_nice(command);
+        // Dash `time/TimeZoneTransitions.as:30`: DST transitions of a zone.
+        if let Some(zone) = command.strip_prefix("tzdump ") {
+            return Ok(match super::tzdump::tzdump(zone.trim()) {
+                Some(xml) => xml.into_bytes(),
+                None => {
+                    tracing::warn!(target: "chumby_host", "tzdump: unknown zone {zone:?}");
+                    Vec::new()
+                }
+            });
+        }
+        // Dash `usb/USBMediaEvents.as:69` and three panels: the USB volumes.
+        if command == "list_mounts" {
+            return Ok(self.mounts_xml().into_bytes());
+        }
+        // Dash `util/VSZ.as`: the slave player's memory, read as
+        // `cat /proc/<pid>/stat | cut -d " " -f 23` once a second while a
+        // widget plays, to restart a leaking slave. There is no slave here;
+        // an empty answer is `Number("") == 0`, which trips nothing.
+        if command.starts_with("cat /proc/") && command.contains("/stat") {
+            return Ok(Vec::new());
+        }
         // Backup-alarm protocol (AlarmSet, F2:11952): these two commands have
         // real semantics, not fixtures. Dismissal must actually delete
         // /psp/ifalarm or the dead-man tone would fire after every answered
@@ -873,6 +935,44 @@ mod tests {
             Some(Err(HostError::NotFound(_)))
         ));
 
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// `<root>/platform` names the hardware config; without it the classic's.
+    #[test]
+    fn test_platform_from_tree() {
+        let root = std::env::temp_dir().join(format!("chumby-platform-test-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let host = FixtureHost::new(&root);
+        assert_eq!(host.native(202, "_getPlatform", &[]), HostValue::String("ironforge".into()));
+        std::fs::write(root.join("platform"), "yume\n").unwrap();
+        let host = FixtureHost::new(&root);
+        assert_eq!(host.native(202, "_getPlatform", &[]), HostValue::String("yume".into()));
+        assert_eq!(
+            host.native(205, "_getEnvironment", &[HostValue::String("CONFIGNAME".into())]),
+            HostValue::String("yume".into())
+        );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// `list_mounts` reports the usb mount points that resolve to a directory,
+    /// in port order; `nice -n` wrapping is transparent; the slave-memory
+    /// poll gets an empty answer without a fixture.
+    #[test]
+    fn test_list_mounts_and_exec_normalisation() {
+        let root = std::env::temp_dir().join(format!("chumby-mounts-test-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("rootfs/mnt/usb2")).unwrap();
+        std::fs::write(root.join("rootfs/mnt/usb"), b"a file, not a mount").unwrap();
+        let host = FixtureHost::new(&root);
+        assert_eq!(host.exec("list_mounts").unwrap(), b"<mounts><mount point=\"/mnt/usb2\" port=\"2\"/></mounts>\n");
+        assert_eq!(host.exec("nice -n 10 list_mounts").unwrap(), host.exec("list_mounts").unwrap());
+        assert_eq!(strip_nice("nice -n 10 cat x"), "cat x");
+        assert_eq!(strip_nice("nice -n -5 cat x"), "cat x");
+        assert_eq!(strip_nice("cat x"), "cat x");
+        assert!(host.exec("cat /proc/undefined/stat | cut -d \" \" -f 23").unwrap().is_empty());
+        if let Some(xml) = super::super::tzdump::tzdump("UTC") {
+            assert_eq!(host.exec("tzdump UTC").unwrap(), xml.into_bytes());
+        }
         std::fs::remove_dir_all(&root).ok();
     }
 

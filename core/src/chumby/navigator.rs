@@ -38,8 +38,11 @@ impl<T: NavigatorBackend> ChumbyNavigator<T> {
     fn intercept(&self, url: &str) -> Option<Result<Vec<u8>, String>> {
         let host = host::host()?;
         if let Some(command) = url.strip_prefix("exec://") {
+            // The Dash's AsynchronousCommand sends `escape(cmd)`; the classic
+            // sends its commands raw, and none of them carries a '%'.
+            let command = percent_decode(command);
             tracing::info!(target: "chumby_host", "exec:// {command:?}");
-            return Some(match host.exec(command) {
+            return Some(match host.exec(&command) {
                 Ok(out) => Ok(out),
                 Err(e) => Err(format!("exec fixture error: {e:?}")),
             });
@@ -81,6 +84,27 @@ impl<T: NavigatorBackend> ChumbyNavigator<T> {
             None => None,
         }
     }
+}
+
+/// `%XX` escapes to bytes, anything else untouched (AS2 `escape` output).
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        let hex = |c: u8| (c as char).to_digit(16).map(|v| v as u8);
+        match (b[i], b.get(i + 1).and_then(|&c| hex(c)), b.get(i + 2).and_then(|&c| hex(c))) {
+            (b'%', Some(h), Some(l)) => {
+                out.push(h << 4 | l);
+                i += 3;
+            }
+            (c, _, _) => {
+                out.push(c);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// Parse the panel's widget-cache download command out of an `exec://` URL:
@@ -288,7 +312,15 @@ impl SuccessResponse for BytesResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_using_url_host, parse_widget_curl};
+    use super::{is_using_url_host, parse_widget_curl, percent_decode};
+
+    #[test]
+    fn decodes_as2_escape_output() {
+        assert_eq!(percent_decode("cat%20%2Fproc%2F1%2Fstat%20%7C%20cut%20%2Dd%20%22%20%22%20%2Df%2023"),
+                   "cat /proc/1/stat | cut -d \" \" -f 23");
+        assert_eq!(percent_decode("plain -n 10 curl 'http://x/?id=AB%40CD'"), "plain -n 10 curl 'http://x/?id=AB@CD'");
+        assert_eq!(percent_decode("100%"), "100%");
+    }
 
     #[test]
     fn parses_widget_cache_curl_command() {

@@ -795,7 +795,7 @@ but noisy; a pid fixture or a manifest entry belongs to issue 13.
 Number: 13
 Timestamp: 2026-09-09, 19:10
 Title: Dash: exec touchpoints the fork does not answer.
-Status: open — step 3 item
+Status: the ones the panel actually issues are answered on dev 2026-09-09 (tzdump, list_mounts, the memory poll, chumbthumb as a stub); the theme-picker strings wait on issue 16, the rest on being seen
 Description: Survey §2.4 lists every command; missing today (desktop run and
 `fixtures/exec/manifest.txt`): `ap_scan`, `network_adapter_list.sh`, `killall
 bivlcored; echo $?`, `list_mounts` (USB mount list, four callers — real value
@@ -813,6 +813,74 @@ rm …; sync; echo $?` / `rm …` strings interpreted in Rust the way
 `parse_widget_curl` (`navigator.rs:130-190`) does for the widget cache — S
 for the local copy, M with the download. Size: M overall. Patch surface:
 `core/src/chumby/` only (NFR2: Rust, not shell).
+
+Done, 2026-09-09 (step 4, after item 12 — driven by what the runs on
+`fixtures-dash/` actually asked for):
+
+- **Two exec-string fixes in front of every handler.** The Dash's
+  `AsynchronousCommand` sends `escape(cmd)`, so `exec://` commands arrived
+  percent-encoded (`nice -n 10 cat%20%2Fproc…`); `navigator.rs` now decodes
+  `%XX` in the `exec://` branch before dispatch (`percent_decode`, tested).
+  The classic never encodes and none of its commands carries a `%` (grep of
+  `frame_2/DoAction.as`), and its widget-cache `curl` URL is parsed from
+  the raw URL before this point. `FixtureHost::exec` then strips a leading
+  `nice -n <n> ` (`strip_nice`), so handlers and manifest prefixes see the
+  command itself — the classic manifest's `nice -n 10 curl` became `curl`
+  (only consumer of that form). Backtick commands were never encoded and
+  never wrapped; unchanged.
+- **`tzdump <zone>`** — `core/src/chumby/tzdump.rs` (160 lines with tests)
+  reads the system TZif file `/usr/share/zoneinfo/<zone>` (RFC 8536, the
+  64-bit block) and emits `<zone name><time utc gmtoff isdst abbrev/>…</zone>`
+  ascending from 1970, the shape `time/TimeZoneTransitions.fromXML` and
+  `TimeZoneTransition.fromXML` parse; a zone without transitions (UTC)
+  yields its one type at utc 0 so the panel has an entry. Debian's tzdata
+  spells every transition out through 2037 (236 for New York, checked on
+  this machine and on the box, tzdata 2026b), so the POSIX footer is not
+  expanded — a 2038 item. Zone names cannot leave zoneinfo. An unknown zone
+  answers empty, which the panel turns into a single UTC entry, with a
+  warning logged. `jiff` sits in `Cargo.lock` but is not built for our
+  targets, so no dependency was added. The appliance must depend on
+  `tzdata` (Debian base has it; make it explicit — appliance issue 15).
+- **`list_mounts`** — `FixtureHost::mounts_xml`: `<mounts><mount point=
+  "/mnt/usbN" port="N"/></mounts>` for `usb`, `usb2`…`usb4` entries of the
+  virtual rootfs that resolve to a directory, i.e. on the appliance the
+  launcher's symlink onto the real mount, so an unplugged stick lists
+  nothing (`USBMediaEvents.gotMountList`, `USBVolume.addGenericVolume`).
+- **the slave-memory poll** — `cat /proc/<pid>/stat | cut -d " " -f 23`
+  every second while a widget plays (`util/VSZ.as`, `WidgetSequencer.
+  checkMemory`): answered empty by an explicit handler, because there is no
+  slave player to measure; `Number("")` is 0, below both `MAX_VSZ`
+  (100 MB, which would `fscommand("quit")`) and `MAX_VSZ_WIDGET`. Feeding
+  it the fork's own VSZ (~1.5 GB) would quit the panel every 16 polls.
+- **`chumbthumb`** — a manifest stub answering `1` (its failure status):
+  the theme's photo module then shows no photo. Photos are out of scope
+  until someone wants them (issue 15's optional half).
+
+- **`platform`** — with `tzdump` answered, both world clocks still showed
+  plain UTC: `time/InternationalDate.as:17` applies a location's transition
+  only when `Chumby.platform == "yume"`, the Dash's hardware config name,
+  and the fork answered `_getPlatform` (5,202) with the classic's
+  `ironforge`. The name is now a fixture file, `<tree>/platform`
+  (`fixtures/platform` = `ironforge`, `fixtures-dash/platform` = `yume`;
+  absent → `ironforge` with a warning), read once by `FixtureHost::new` and
+  answered by `_getPlatform` and `_getEnvironment("CONFIGNAME")`. Consumers
+  of the value: the Dash's `InternationalDate` and a `PLATFORM_STORMWIND`
+  compare in `display/ScreenManager.as:298`; the classic's 23 compares
+  against `falconwing`, `insignia3.5`, `ironforge` — its tree keeps
+  `ironforge`, so nothing moves there.
+
+Verified: `cargo test` for the chumby modules (51 pass); the Dash on
+`fixtures-dash/` — `tzdump` answered for both clock locations and, after a
+click on the theme's TIME tile (a press held 0.3 s; a plain xdotool click
+was too quick for the theme's button), the world clocks read San Diego
+11:03 AM and New York 2:03 PM against the system's 11:03 / 14:03; no
+MISSING exec left except the two `files.chumby.com` families of issue 16 —
+and 35–40 s classic runs on `fixtures/` after each change (exit 0, no
+MISSING, `_getPlatform` → `ironforge`). Not done, by design: `imgtool`, `metadb
+--prune`, `du -s`, `chumby_haptic`, `hide_gfx_layer0`, `delink_*` — none
+has been issued in a run yet; add them when they are. The theme-picker
+`cp`/`rm`/`md5sum`/`download_theme` strings belong with the catalog
+(issue 16).
 
 ---
 

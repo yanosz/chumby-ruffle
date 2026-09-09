@@ -83,7 +83,7 @@ The families that must behave *sensibly*, not merely exist:
 - **Pure functions** — `_base64Encode/Decode` (5,160/161), `_md5Sum`
   (5,162), `_blowfishEncrypt/Decrypt` (5,163/164). Real implementations, no
   fixtures.
-- **Identity** — `_getPlatform` (5,202) → `ironforge`, `_getEnvironment`
+- **Identity** — `_getPlatform` (5,202) → the tree's `platform` file (`ironforge`; `yume` for the Dash), `_getEnvironment`
   (5,205) → `LANGUAGE`, `CONFIGNAME`.
 - **Time** — `_setSystemTime` (5,176), `_getTimeZone` (5,177),
   `_setTimeZone` (5,178). These must round-trip: set → get returns what was
