@@ -1137,7 +1137,7 @@ lines to 235, all 155 `chumby_host` lines intact. Recorded in
 Number: 19
 Timestamp: 2026-09-09, 19:10
 Title: Dash: subsystems written against the classic that need re-verifying.
-Status: open — step 3 item
+Status: done on dev 2026-09-09 — six verdicts below; two real gaps split off as issues 20 and 21
 Description: Things the fork does by name or by classic layout: (a)
 `alarm_guard.rs` and `backup_alarm.rs` hook `Alarm.ringAlarm` /
 `stopAlarmsExcept` F2 prototypes — the Dash's `com.chumby.alarm.AlarmSet` is
@@ -1157,3 +1157,96 @@ the desktop — confirm nothing hides behind an overlay assumption once theme
 and widget are on screen. (f) `_getScreenWidth/Height` (5,200/201) feed
 `Chumby.screenWidth/Height`; check what the fixture returns for an 860x480
 stage. Size: M in total, mostly reading and running.
+
+Verdicts, 2026-09-09. Evidence is one Dash run and one classic run of the
+same binary, compared line by line, plus the export.
+
+- **(a) The four prototype hooks do not bind on the Dash, by construction
+  and in fact.** The classic run announces all four — `wrapped
+  AlarmSet.prototype.stopAlarmsExcept`, `wrapped
+  WidgetPlayer.prototype.fetchWidgetInstanceXML`, `replaced
+  WidgetPlayer.prototype.playIntro`, `music sources hidden` — and the Dash
+  run announces none of them, because each looks up a `_global` class the
+  Dash does not have. No harm, but no cover either: the Dash's
+  `com.chumby.alarm.AlarmSet.stopAlarmsExcept` (`alarm/AlarmSet.as:242-254`)
+  has the same shape that caused issue 10 on the classic, so the defect is
+  probably there too and unguarded — **split off as issue 21**. The
+  backup-alarm protocol is unaffected: `backup_alarm.rs` keys on the
+  `rm /psp/ifalarm` command, not on a prototype, and the Dash writes the
+  same file.
+- **(b) The UI policy loads its 12 rules and matches nothing.** Every
+  selector is rooted at `controlPanel/…`; the Dash's display tree is
+  `_level0.panel.panel/…` (`chumby_pick` lines). The Dash run logs the rule
+  count and not one application. Correct for now — no Dash control has yet
+  been found that the appliance cannot honour — and when one is, it needs
+  its own selectors; the policy file is per-build, not per-tree, so that is
+  a decision to take before the second panel ships.
+- **(c) Audio.** The Dash calls `_getAudioPlayerState` (5,131), which the
+  host answers from its real state machine, and `_sendMediaPlayerCommand`
+  (5,152), still a logging stub; the pipe family (5,191-195) is not called
+  at all in a normal run. Nothing else audio-related fires until a music
+  source is opened, which is untested on the Dash.
+- **(d) Volume, mute, time.** `_getSystemVolume` (5,180) and
+  `_getSystemMute` (5,184) are read at startup and answered from the host's
+  store, as on the classic. The Dash never shells out to `chumby_set_*`.
+- **(e) Display: one real gap.** The overlay natives (`_setDisplay` 5,83,
+  `_setOverlayVisibility` 5,110, `_setOverlayBlendingEnabled` 5,112,
+  `_setOverlayChromaBlendingEnabled` 5,114, `_fillFrameBufferBytes` 5,385,
+  `_enableSlaveUpdates` 5,119) are all logging stubs and the panel, theme
+  and widget paint correctly regardless — nothing hides behind an overlay
+  assumption. But **brightness does not reach the hardware**: the Dash
+  calls `_setLCDBrightness` (5,22) from
+  `display/ScreenManager.as:296-304`, while the fork's two brightness
+  routes are both classic-shaped (the `/proc/sys/sense1/brightness` write
+  and the `brightness_ctl` executable driven from `_setLCDMute`). 5,22
+  currently lands in the generic get/set store and does nothing — **split
+  off as issue 20**.
+- **(f) Screen size resolves itself.** `_getScreenWidth` / `_getScreenHeight`
+  (5,200/201) answer `Undefined`, so `Chumby.as:82-83` falls back to
+  `System.capabilities.screenResolution*`, i.e. Ruffle's actual stage. That
+  is better than a fixture constant would be: the values follow the real
+  window or display, and they are what the panel passes on to a widget as
+  `_chumby_screen_width/height`.
+
+---
+
+Number: 20
+Timestamp: 2026-09-09, 21:40
+Title: Dash: brightness never reaches the backlight.
+Status: open — found by issue 19, needs the DSI box to verify
+Description: `display/ScreenManager.as:296-304`: on any platform that is
+not stormwind — ours is `yume` — `setRawBrightness` calls
+`ChumbyNative._setLCDBrightness(ceil(brightness * 655.35))`, native 5,22.
+The fork honours brightness two other ways, both classic-shaped
+(`brightness.rs`): the panel's `_putFile` to `/proc/sys/sense1/brightness`,
+intercepted by `RootFs`, and the `brightness_ctl` executable driven from
+`_setLCDMute` (5,20). 5,22 falls into the generic native store and changes
+nothing, so on the Dash the screen-controls UI and the night-mode dim would
+move a value nobody reads. `_setLCDMute` (5,20) *is* called by the Dash as
+well, so `brightness_ctl` mode may already do part of the job — which part
+is exactly what the box has to answer. Work: route 5,22 through the same
+two backends, scaled back from the 0-65535 the panel sends, then check the
+brightness UI and night mode on chumby-pi-3. Size: S-M. Patch surface:
+`core/src/chumby/` only.
+
+---
+
+Number: 21
+Timestamp: 2026-09-09, 21:40
+Title: Dash: the silent-alarm cancel bug is probably unguarded there.
+Status: open — found by issue 19, not reproduced yet
+Description: Issue 10 on the classic: a silent (`type="none"`) alarm firing
+while another alarm sounds cancels the sounding one, because
+`Alarm.ringAlarm` opens with `_alarmSet.stopAlarmsExcept(this)`. The Dash
+has the same shape — `com/chumby/alarm/AlarmSet.as:242-254` stops every
+other *ringing* alarm, called from `Alarm.as` — but `alarm_guard.rs` wraps
+`_global.AlarmSet.prototype`, which the Dash does not define (its class is
+`com.chumby.alarm.AlarmSet`), so the Dash run never logs the wrap. Before
+porting the guard: reproduce the defect on the Dash the way issue 10 was
+reproduced (two alarms a minute apart, the earlier audible, the later
+silent), because the Dash's alarm classes are a different tree and its
+`stopAlarm` takes two arguments where the classic's takes one. If it
+reproduces, the guard is a path change plus that argument. Note the Dash
+also has scheduler events (`com/chumby/event/*`, `/psp/events`) which can
+act on alarms, and which the classic does not have. Size: S to reproduce,
+S-M to fix.
