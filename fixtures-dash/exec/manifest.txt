@@ -1,0 +1,12 @@
+# command-prefix<TAB>response-file   (longest prefix wins)
+guidgen.sh	guid.txt
+chumby_version -h	version_h.txt
+chumby_version -s	version_s.txt
+chumby_version -f	version_f.txt
+chumby_version -n	version_n.txt
+dcid -o	dcid.xml
+sync	empty.txt
+killall bivlcored	zero.txt
+/mnt/storage/chumbrowser/stop_chumbrowser	empty.txt
+ap_scan	empty.txt
+network_adapter_list.sh	empty.txt
