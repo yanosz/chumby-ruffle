@@ -22,3 +22,9 @@ holds `auth/create`, `device/index/_`, `profile/show/1` and
 device GUID sits there and differs per box — while an exact file still
 wins. The widget movie href is `file:////usr/widgets/builtinclock.swf`,
 resolved through the virtual rootfs like the theme.
+
+Answered in Rust rather than from `exec/`: `tzdump <zone>` (DST transitions
+from the system tzdata, `core/src/chumby/tzdump.rs`), `list_mounts` (the
+`rootfs/mnt/usb*` entries that resolve) and the slave-player memory poll
+(empty: there is no slave). `chumbthumb` is a manifest stub answering its
+failure status.

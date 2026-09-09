@@ -40,6 +40,7 @@ pub mod navigator;
 pub mod real_ident;
 pub mod real_net;
 pub mod restart;
+pub mod tzdump;
 pub mod ui_policy;
 
 pub use fixture::FixtureHost;

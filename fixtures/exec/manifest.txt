@@ -9,5 +9,5 @@ md5sum /tmp/.guidhash	guidhash_md5.txt
 sync	empty.txt
 killall headphone_mgr	empty.txt
 mkdir /tmp/widgetcache	zero.txt
-nice -n 10 curl	empty.txt
+curl	empty.txt
 rm /tmp/musicsource	empty.txt
