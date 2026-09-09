@@ -1030,7 +1030,7 @@ Two things the runs taught, both recorded rather than fixed here:
 Number: 17
 Timestamp: 2026-09-09, 19:10
 Title: Dash: six natives the fork does not bind.
-Status: open — step 3 item
+Status: done on dev 2026-09-09 — all six named, the three the panel calls answered
 Description: `com/blueocty/DashNative.as`: (5,390) `_getFlipState` and (5,391)
 `_setFlipState` (the Dash's upside-down mode, `accelerometer/Flipper`),
 (5,392)/(5,393) logo LED, (5,394) `_fadeBacklight` (map onto `brightness.rs`
@@ -1038,6 +1038,34 @@ or ignore); `ChumbyNative.as:287` (5,445) `_getWidgetNumber`, read at
 `WidgetSequencer.as:238-240,681` behind an `!= undefined` guard, so
 `Undefined` skips the branch. Bind in `avm.rs`'s name table, answer in
 `fixture.rs`. Size: S. Patch surface: additions only.
+
+Done, 2026-09-09. Six names in `avm::wrapper_name`, three defaults in
+`fixture::default_for_getter`; the host's existing name-keyed store handles
+each get/set pair without further code. Answers and why:
+
+- `_getFlipState` (5,390) → 0, `DashNative.UNFLIPPED`. Read once in
+  `accelerometer/Flipper.as:15` to seed `flipped`; the panel is the right
+  way up and only a real accelerometer changes that (`Flipper.update` is
+  polled solely when `P3D.hasAccelerometer()`, `:16-19`).
+- `_setFlipState` (5,391) → stored. Called from `Flipper.update:47`, which
+  we never reach; storing keeps a later `_getFlipState` honest.
+- `_getLogoLEDState` (5,392) → 0, `_setLogoLEDState` (5,393) → stored.
+  There is no logo LED on a Pi. Inherited oddity worth knowing:
+  `LogoLED.turnOn()` (`controlpanel/gadgets/LogoLED.as:18-21`) sets
+  `LOGO_LED_OFF`, exactly as `turnOff()` does — chumby's own bug, so on a
+  real Dash the LED can only ever be switched off.
+- `_fadeBacklight` (5,394) → Undefined. Bound by `DashNative` but called
+  from nowhere in the export; the name only makes a future call legible in
+  the log.
+- `_getWidgetNumber` (5,445) → 0. `WidgetSequencer.playCurrentWidget:238`
+  defers a widget switch while two or more widget players are alive and
+  `onTimer:681` releases it again; we run none beside the panel itself, so
+  nothing is deferred. This also lets the panel's own index wrap at `:243`
+  run, which the previous `Undefined` skipped.
+
+Run: `_getFlipState() -> 0`, `_setLogoLEDState(0)`, `_getWidgetNumber() -> 0`
+all dispatched, no `_unknown` left, home screen and widget unchanged;
+classic run clean and never calls any of them.
 
 ---
 

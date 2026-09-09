@@ -492,6 +492,15 @@ fn wrapper_name(index: u16) -> &'static str {
         386 => "_setDisplayRect",
         387 => "_setDisplayRectEventTranslate",
         420 => "_SetOnLocationCallback",
+        // Sony Dash only (`com/blueocty/DashNative.as`): the display flip the
+        // accelerometer drives, the logo LED, the backlight fade.
+        390 => "_getFlipState",
+        391 => "_setFlipState",
+        392 => "_getLogoLEDState",
+        393 => "_setLogoLEDState",
+        394 => "_fadeBacklight",
+        // Dash `ChumbyNative.as:287`: how many widget players are running.
+        445 => "_getWidgetNumber",
         _ => "_unknown",
     }
 }

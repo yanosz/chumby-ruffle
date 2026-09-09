@@ -596,6 +596,14 @@ fn default_for_getter(name: &str) -> HostValue {
         "_getSystemMute" | "_getSpeakerMute" | "_getLCDMute" => HostValue::Number(0.0),
         "_getTouchClick" => HostValue::Number(0.0),     // (5,43) click sound off
         "_getLCDBrightness" => HostValue::Number(65536.0), // (5,21) full
+        // (5,390) Dash `DashNative.UNFLIPPED`: the panel is the right way up,
+        // and `Flipper` only ever changes that from a real accelerometer.
+        "_getFlipState" => HostValue::Number(0.0),
+        "_getLogoLEDState" => HostValue::Number(0.0), // (5,392) no logo LED here
+        // (5,445): the Dash defers a widget switch while two widget players
+        // are alive (`WidgetSequencer.playCurrentWidget`). We run none beside
+        // the panel itself, so nothing is ever deferred.
+        "_getWidgetNumber" => HostValue::Number(0.0),
         _ => HostValue::Undefined,
     }
 }
