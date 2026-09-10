@@ -633,6 +633,16 @@ CLI's `--volume` defaults to 1, `desktop/src/cli.rs:118`, and the launcher
 passes none); the backup-alarm Klaxon 100 (`backup_alarm.rs:34`), which
 ignores the cap by design. Nothing to change in any of them.
 
+The backup-alarm Klaxon now obeys the cap too (Jan, same evening), reversing
+the FR13 exemption: `BackupAlarm::start` carries `volume_cap`
+(`fixture.rs:95`), `tone_volume(knob, cap)` scales
+`/psp/backup_alarm_volume` (default 100) by it, and the log line prints both
+halves. Consequence to keep in view: the appliance's still-owed on-device
+check — "is the Klaxon loud enough to wake someone" (appliance
+requirements.md, backup-alarm row) — is now being asked of a tone at half
+scale. `claude-docs/requirements.md` FR13 and the `volume_cap` row here were
+corrected; they still said the tone was exempt.
+
 Panel-side on the box: `/psp/volume` 32 → 100 and `/psp/alarm_volume` 44 → 100
 (the shipped seed is already 100), so the slider starts at the top of the new
 scale and alarms are not quieter than the master.

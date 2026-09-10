@@ -351,9 +351,10 @@ Decisions (Jan, 2026-07-10, scoping A2 of the options ladder):
   the tone stops it early.
 - Tone is `Klaxon.mp3` from the shipped alarmtones (local file), falling
   back to an mpv-generated sine if missing; volume from
-  `/psp/backup_alarm_volume` (default 100), through mpv only — no
-  sink/hardware volume writes until the on-device check says it is too
-  quiet.
+  `/psp/backup_alarm_volume` (default 100) **times `volume_cap`** (Jan,
+  2026-09-10 — it reaches the same amplifier as everything else), through
+  mpv only — no sink/hardware volume writes until the on-device check says
+  it is too quiet.
 
 ### FR14 — Player configuration file
 
@@ -366,7 +367,7 @@ logs and answers defaults (NFR3).
 
 | key | default | meaning |
 |-----|---------|---------|
-| `volume_cap` | 100 | Percent. **A scale, not a clamp** (Jan, 2026-07-11): the panel's 100 % maps to the cap, proportionally below. Panel space stays honest 0–100 everywhere the panel reads it back (`/psp/volume`, `_getSystemVolume`); only what reaches the audio backend is scaled. The backup-alarm Klaxon (FR13) deliberately ignores the cap — it keeps its own `/psp/backup_alarm_volume` knob at full range (Jan, 2026-07-11). |
+| `volume_cap` | 100 | Percent. **A scale, not a clamp** (Jan, 2026-07-11): the panel's 100 % maps to the cap, proportionally below. Panel space stays honest 0–100 everywhere the panel reads it back (`/psp/volume`, `_getSystemVolume`); only what reaches the audio backend is scaled. Every stage that reaches the amplifier obeys it, the backup-alarm Klaxon included — its `/psp/backup_alarm_volume` is scaled the same way (Jan, 2026-09-10; until then FR13 exempted it deliberately). |
 | `access_chumby_com` | 0 | Opt-in chumby.com traffic. Gates the music proxies (FR15) and — with a stable identity (serial or `device_guid`) — the whole using-chumby.com surface: registration and the account channel (design §12). Off (the default), NFR6 holds unconditionally. |
 | `enable_lyrion` | 0 | Shows the Squeezebox Server source (FR15). The player side is complete; the server side is unverified and out of scope (Jan, 2026-07-11). |
 | `brightness_ctl` | unset | Path to an executable; switches brightness to the discrete radio view and runs the program with the level 0/1/2 as its argument (FR16). Must exist and be executable at load, else warned and ignored. |

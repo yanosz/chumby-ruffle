@@ -7,7 +7,8 @@
 # that is otherwise at unity (ALSA mixer, PipeWire sink, the SWF mixer) —
 # a Pi with a powered amp is uncomfortably loud at the top of its range,
 # and halving the ceiling makes the useful part of the slider usable.
-# The backup-alarm Klaxon ignores it (FR13, its own /psp/backup_alarm_volume).
+# The backup-alarm Klaxon obeys it too: its own /psp/backup_alarm_volume
+# (default 100) is scaled by this same percent.
 volume_cap = 50
 
 # 0/1. A 1 opts this box into chumby.com. It shows the SHOUTcast / blue

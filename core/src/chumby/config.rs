@@ -21,8 +21,9 @@ use std::path::{Path, PathBuf};
 pub struct PlayerConfig {
     /// Scales what reaches the audio backend: effective volume =
     /// panel volume × cap / 100. Panel space stays 0–100 everywhere the
-    /// panel reads it back. The backup-alarm Klaxon (FR13) deliberately
-    /// ignores the cap — it has its own `/psp/backup_alarm_volume` knob.
+    /// panel reads it back. Every stage that reaches the amplifier obeys
+    /// it, the backup-alarm Klaxon included (its `/psp/backup_alarm_volume`
+    /// is scaled the same way — Jan, 2026-09-10; FR13 used to exempt it).
     pub volume_cap: f64,
     /// The same shape for the backlight: the panel's 100% brightness maps
     /// to this percent of the display's `max_brightness` (brightness.rs).

@@ -92,7 +92,7 @@ impl FixtureHost {
             slave_vars: Mutex::new(HashMap::new()),
             native_state: Mutex::new(initial_state),
             audio: Mutex::new(AudioPlayer::new(rootfs_path.clone(), config.volume_cap)),
-            backup_alarm: BackupAlarm::start(rootfs_path),
+            backup_alarm: BackupAlarm::start(rootfs_path, config.volume_cap),
             config,
             root,
         }

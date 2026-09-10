@@ -13,6 +13,10 @@
 //! is immune to wall-clock jumps — the Pi has no RTC, so the clock *will*
 //! step after boot.
 //!
+//! Its level is `/psp/backup_alarm_volume` (default 100) times the
+//! appliance's `volume_cap` — the ceiling applies to every stage that
+//! reaches the amplifier.
+//!
 //! The tone deliberately shares no fate with the primary alarm's playback:
 //! its own mpv child (never `AudioPlayer`'s slot or IPC socket), fed from a
 //! local file, falling back to an mpv-generated sine tone — no network
@@ -42,12 +46,15 @@ pub struct BackupAlarm {
 impl BackupAlarm {
     /// Spawn the watcher thread. The thread runs for the life of the
     /// process; the host it belongs to is a process-global singleton.
-    pub fn start(rootfs: PathBuf) -> Self {
+    /// `volume_cap` is the appliance's ceiling (config.rs): the tone is a
+    /// dead-man beep, but it comes out of the same amplifier as everything
+    /// else, so it obeys the same ceiling (Jan, 2026-09-10).
+    pub fn start(rootfs: PathBuf, volume_cap: f64) -> Self {
         let beep = Arc::new(Mutex::new(None));
         let slot = Arc::clone(&beep);
         std::thread::Builder::new()
             .name("chumby-backup-alarm".into())
-            .spawn(move || watch(rootfs, slot))
+            .spawn(move || watch(rootfs, slot, volume_cap))
             .expect("spawn backup-alarm watcher");
         Self { beep }
     }
@@ -86,7 +93,7 @@ fn decide(now: i64, armed: i64) -> Action {
     }
 }
 
-fn watch(rootfs: PathBuf, beep: Arc<Mutex<Option<Child>>>) {
+fn watch(rootfs: PathBuf, beep: Arc<Mutex<Option<Child>>>, volume_cap: f64) {
     let ifalarm = rootfs.join("psp/ifalarm");
     tracing::info!(target: "chumby_backup_alarm",
         "watching {} (stale window {STALE_WINDOW}s)", ifalarm.display());
@@ -98,7 +105,7 @@ fn watch(rootfs: PathBuf, beep: Arc<Mutex<Option<Child>>>) {
                     let _ = std::fs::remove_file(&ifalarm);
                     tracing::warn!(target: "chumby_backup_alarm",
                         "primary alarm unanswered ({late_by}s past fire time) — sounding");
-                    sound(&rootfs, &beep);
+                    sound(&rootfs, &beep, volume_cap);
                 }
                 Action::ClearStale { late_by } => {
                     let _ = std::fs::remove_file(&ifalarm);
@@ -114,9 +121,9 @@ fn watch(rootfs: PathBuf, beep: Arc<Mutex<Option<Child>>>) {
 /// Spawn the tone and babysit it for the configured duration, or until a
 /// dismissal empties the slot. Blocks the watcher thread — a new arm written
 /// mid-tone is picked up by the next poll.
-fn sound(rootfs: &PathBuf, beep: &Arc<Mutex<Option<Child>>>) {
-    let volume = read_knob(rootfs, "psp/backup_alarm_volume", DEFAULT_VOLUME as i64)
-        .clamp(0, 100);
+fn sound(rootfs: &PathBuf, beep: &Arc<Mutex<Option<Child>>>, volume_cap: f64) {
+    let knob = read_knob(rootfs, "psp/backup_alarm_volume", DEFAULT_VOLUME as i64);
+    let volume = tone_volume(knob, volume_cap);
     let duration = read_knob(rootfs, "psp/backup_alarm_duration", DEFAULT_DURATION_SECS as i64)
         .max(1) as u64;
 
@@ -147,7 +154,8 @@ fn sound(rootfs: &PathBuf, beep: &Arc<Mutex<Option<Child>>>) {
     match cmd.spawn() {
         Ok(child) => {
             tracing::info!(target: "chumby_backup_alarm",
-                "tone pid={} source={source:?} vol={volume} duration={duration}s", child.id());
+                "tone pid={} source={source:?} vol={volume} (knob {knob} × cap \
+                 {volume_cap}%) duration={duration}s", child.id());
             *beep.lock().unwrap() = Some(child);
         }
         Err(e) => {
@@ -189,6 +197,11 @@ fn read_epoch(path: &std::path::Path) -> Option<i64> {
     std::fs::read_to_string(path).ok()?.trim().parse().ok()
 }
 
+/// The tone's mpv volume: the /psp knob under the appliance ceiling.
+fn tone_volume(knob: i64, cap: f64) -> i64 {
+    (knob.clamp(0, 100) as f64 * cap.clamp(0.0, 100.0) / 100.0).round() as i64
+}
+
 fn read_knob(rootfs: &std::path::Path, rel: &str, default: i64) -> i64 {
     std::fs::read_to_string(rootfs.join(rel))
         .ok()
@@ -209,6 +222,20 @@ mod tests {
     fn fires_at_and_after_fire_time() {
         assert!(matches!(decide(1000, 1000), Action::Fire { late_by: 0 }));
         assert!(matches!(decide(1000 + STALE_WINDOW, 1000), Action::Fire { .. }));
+    }
+
+    /// The dead-man tone is not exempt from the appliance ceiling
+    /// (Jan, 2026-09-10): knob × cap, both clamped, nothing rounding
+    /// a wanted tone to silence except a knob or cap of 0.
+    #[test]
+    fn tone_volume_obeys_the_cap() {
+        assert_eq!(tone_volume(100, 50.0), 50);
+        assert_eq!(tone_volume(100, 100.0), 100);
+        assert_eq!(tone_volume(60, 50.0), 30);
+        assert_eq!(tone_volume(1, 50.0), 1); // 0.5 rounds up
+        assert_eq!(tone_volume(0, 50.0), 0);
+        assert_eq!(tone_volume(150, 50.0), 50); // knob clamps first
+        assert_eq!(tone_volume(100, 150.0), 100); // so does the cap
     }
 
     #[test]
