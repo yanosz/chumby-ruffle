@@ -20,6 +20,14 @@ access_chumby_com = 0
 # /stream.mp3 player protocol is unverified.
 enable_lyrion = 0
 
+# Percent of the display's own maximum backlight that the panel's 100%
+# brightness reaches; the slider stays 0–100 and spreads linearly over it.
+# 25 on the 5" DSI panel (max_brightness 255): full slider = duty 64, and
+# the low end — where this panel is actually usable — gains four times the
+# resolution. Raise it for a dimmer display, 100 for the raw range. Only
+# the kernel-backlight mode below is scaled; discrete brightness_ctl is not.
+brightness_cap = 25
+
 # Discrete brightness mode. Default (unset): the player looks for a kernel
 # backlight under /sys/class/backlight (rpi_backlight preferred, else a
 # lone device), the panel shows its day/night brightness sliders, and their

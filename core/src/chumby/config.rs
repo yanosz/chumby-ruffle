@@ -8,6 +8,7 @@
 //!
 //! ```toml
 //! volume_cap = 70        # percent: the panel's 100% maps to this
+//! brightness_cap = 25    # percent: the panel's 100% maps to this backlight duty
 //! access_chumby_com = 0  # music-proxy passthrough (FR15); default 0 (NFR6)
 //! enable_lyrion = 0      # show the Squeezebox Server source
 //! brightness_ctl = "/usr/local/bin/backlight"  # discrete 0/1/2 mode
@@ -23,6 +24,14 @@ pub struct PlayerConfig {
     /// panel reads it back. The backup-alarm Klaxon (FR13) deliberately
     /// ignores the cap — it has its own `/psp/backup_alarm_volume` knob.
     pub volume_cap: f64,
+    /// The same shape for the backlight: the panel's 100% brightness maps
+    /// to this percent of the display's `max_brightness` (brightness.rs).
+    /// The panel's slider stays 0–100 and its two settings files are
+    /// untouched; capping is what makes the low end adjustable at all —
+    /// uncapped, one pixel of slider travel is ~2.5 duty steps on a
+    /// 255-step backlight, and the whole useful range of the 5" DSI panel
+    /// sits in the first few of them.
+    pub brightness_cap: f64,
     /// Opt-in chumby.com traffic. Gates (a) the music proxies — the
     /// SHOUTcast/blue-octy sources appear in the panel and their hosts pass
     /// through the navigator (music_sources.rs) — and (b) the whole
@@ -67,6 +76,7 @@ impl Default for PlayerConfig {
     fn default() -> Self {
         Self {
             volume_cap: 100.0,
+            brightness_cap: 100.0,
             access_chumby_com: false,
             enable_lyrion: false,
             device_guid: None,
@@ -87,8 +97,9 @@ pub fn load(path: &Path) -> PlayerConfig {
     };
     let config = parse(&text);
     tracing::info!(target: "chumby_host",
-        "player config {}: volume_cap={} access_chumby_com={} device_guid={} brightness_ctl={}",
-        path.display(), config.volume_cap, config.access_chumby_com,
+        "player config {}: volume_cap={} brightness_cap={} access_chumby_com={} \
+         device_guid={} brightness_ctl={}",
+        path.display(), config.volume_cap, config.brightness_cap, config.access_chumby_com,
         config.device_guid.as_deref().unwrap_or("<none>"),
         config.brightness_ctl.as_deref().unwrap_or(Path::new("<none>")).display());
     if config.access_chumby_com {
@@ -116,6 +127,12 @@ fn parse(text: &str) -> PlayerConfig {
                 _ => tracing::warn!(target: "chumby_host",
                     "player config: volume_cap must be 0–100, got {value} — keeping {}",
                     config.volume_cap),
+            },
+            ("brightness_cap", v) => match as_number(v) {
+                Some(n) if (0.0..=100.0).contains(&n) => config.brightness_cap = n,
+                _ => tracing::warn!(target: "chumby_host",
+                    "player config: brightness_cap must be 0–100, got {value} — keeping {}",
+                    config.brightness_cap),
             },
             ("access_chumby_com", v) => match as_flag(v) {
                 Some(b) => config.access_chumby_com = b,
@@ -205,8 +222,9 @@ mod tests {
     #[test]
     fn test_parse_values() {
         let config =
-            parse("volume_cap = 70\naccess_chumby_com = 1\nenable_lyrion = 1\nmerge_local_remote_widgets = 1\n");
+            parse("volume_cap = 70\nbrightness_cap = 25\naccess_chumby_com = 1\nenable_lyrion = 1\nmerge_local_remote_widgets = 1\n");
         assert_eq!(config.volume_cap, 70.0);
+        assert_eq!(config.brightness_cap, 25.0);
         assert!(config.access_chumby_com);
         assert!(config.enable_lyrion);
         assert!(config.merge_local_remote_widgets);
@@ -225,6 +243,8 @@ mod tests {
         assert_eq!(parse("volume_cap = 150"), PlayerConfig::default());
         assert_eq!(parse("volume_cap = -1"), PlayerConfig::default());
         assert_eq!(parse("volume_cap = \"loud\""), PlayerConfig::default());
+        assert_eq!(parse("brightness_cap = 101"), PlayerConfig::default());
+        assert_eq!(parse("brightness_cap = \"dim\""), PlayerConfig::default());
         assert_eq!(parse("access_chumby_com = 2"), PlayerConfig::default());
         assert_eq!(parse("some_future_key = 1"), PlayerConfig::default());
     }

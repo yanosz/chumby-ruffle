@@ -576,3 +576,39 @@ by the classic's signature).
 Untracked and in git nowhere, left in this worktree by the step-4 session:
 `fixtures-dash/rootfs/psp/guid` and `fixtures-dash/rootfs/psp/theme.swf` (the
 Dash theme asset — do not commit an extracted SWF).
+
+---
+
+Number: 23
+Timestamp: 2026-09-10, 20:40
+Title: The backlight scale wastes its whole range above 25 %.
+Status: fixed in the player — the value itself wants a look on the box
+Description: On the 5" DSI panel (`10-0045`, `max_brightness` 255) Jan runs
+day brightness at 7.2 and night/dim at 1.5 out of the panel's 0-100, i.e. duty
+18 and 4 — the useful range is the bottom 2 % of the scale, and that is also
+its coarsest part: one panel unit is 655.35 raw (F2:9119
+`setRawBrightness` → `int(v × 655.35)`) = 2.55 duty steps, so a pixel of
+slider travel jumps several steps where he needs single ones.
+
+Fix: `brightness_cap`, a percent in `player.toml` (config.rs), shipped as an
+active `25` in `fixtures/player.toml.example` — the file `build-debs.sh:48`
+installs as the appliance conffile. `Backlight` stores `max_brightness × cap`
+(brightness.rs:79-90) and `set_raw` scales the panel's 0-65535 linearly onto
+it, keeping the ≥1 floor so no "on" position turns the screen off. Panel 100 %
+now reaches duty 64 and the slider's travel spreads over it: four times the
+resolution down low, which is where this panel lives.
+
+Consumers checked: `fixture.rs:597-603` (the sole `set_raw` caller, the
+`/proc/sys/sense1/brightness` interception) unchanged; `fixture.rs:78` passes
+the cap at detection; `ui_policy.rs:242` `brightness_available` untouched — a
+cap is not availability; `brightness_ctl`'s discrete 0/1/2 path is not scaled
+and says so in the template. The Dash's own route (native 5,22, issue 20) is
+unimplemented and must land on the same cap.
+
+A cap so small that `max × cap` rounds below one step warns at detection and
+leaves a switch, not a dimmer.
+
+Still to do: deploy and let Jan judge 25 %. The panel's two settings files are
+in panel space and untouched, so today's levels move — day 7.2 → duty 5,
+night 1.5 → duty 1; reproducing today's brightness means roughly 29 and 6 on
+the sliders.

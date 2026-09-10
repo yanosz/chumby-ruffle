@@ -75,7 +75,7 @@ impl FixtureHost {
         let backlight = if config.brightness_ctl.is_some() {
             None
         } else {
-            Backlight::detect()
+            Backlight::detect(config.brightness_cap)
         };
 
         // Same gate as the passthrough/ui-policy: remote channels are live
@@ -752,10 +752,11 @@ mod tests {
 
         let fs = RootFs {
             root: root.join("rootfs"),
-            backlight: Backlight::detect_in(&class),
+            backlight: Backlight::detect_in(&class, 100.0),
             hide_local_profile: false,
         };
-        // Panel 50%: setDim writes int(50 × 655.35).
+        // Panel 50%: setDim writes int(50 × 655.35). Uncapped here; the
+        // cap itself is brightness.rs's test.
         fs.put_file("//proc/sys/sense1/brightness", b"32767").unwrap();
         assert_eq!(
             std::fs::read_to_string(dev.join("brightness")).unwrap(),
