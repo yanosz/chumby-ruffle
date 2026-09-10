@@ -2,9 +2,13 @@
 # Read once at player start; absent file or absent key = the default shown
 # here. Reference: claude-docs/requirements.md FR14/FR15.
 
-# Percent. A scale, not a clamp: the panel's 100% volume maps to this.
-# The backup-alarm Klaxon ignores it.
-volume_cap = 100
+# Percent. A scale, not a clamp: the panel's 100% volume maps to this,
+# linearly. 50 keeps the panel slider as the only attenuator in a chain
+# that is otherwise at unity (ALSA mixer, PipeWire sink, the SWF mixer) —
+# a Pi with a powered amp is uncomfortably loud at the top of its range,
+# and halving the ceiling makes the useful part of the slider usable.
+# The backup-alarm Klaxon ignores it (FR13, its own /psp/backup_alarm_volume).
+volume_cap = 50
 
 # 0/1. A 1 opts this box into chumby.com. It shows the SHOUTcast / blue
 # octy radio / Sleep Sounds music sources (their hosts pass through the

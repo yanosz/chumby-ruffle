@@ -612,3 +612,27 @@ Still to do: deploy and let Jan judge 25 %. The panel's two settings files are
 in panel space and untouched, so today's levels move — day 7.2 → duty 5,
 night 1.5 → duty 1; reproducing today's brightness means roughly 29 and 6 on
 the sliders.
+
+---
+
+Number: 24
+Timestamp: 2026-09-10, 22:05
+Title: The volume ceiling is too high, and the master is not the only fader.
+Status: fixed by config — the 50 % value is Jan's to judge on the box
+Description: Jan's rule for the appliance: every stage at unity, the panel's
+slider the single master, capped at half. `volume_cap` (FR14, config.rs) is
+already that scale — `audio.rs:69-74` `effective_volume` = panel × cap / 100,
+linear, applied to mpv's `volume` at spawn (`--volume=`) and over IPC on every
+change; panel space and `/psp/volume` keep an honest 0-100. Only its shipped
+value changed, 100 → 50 in `fixtures/player.toml.example`.
+
+Audited on chumby-pi-3 the same evening, everything else already at unity:
+ALSA `PCM` 100 % on card 0 (Headphones) and card 1 (the USB dongle, the
+default sink); both PipeWire sinks `vol: 1.00`; SWF audio unity (the desktop
+CLI's `--volume` defaults to 1, `desktop/src/cli.rs:118`, and the launcher
+passes none); the backup-alarm Klaxon 100 (`backup_alarm.rs:34`), which
+ignores the cap by design. Nothing to change in any of them.
+
+Panel-side on the box: `/psp/volume` 32 → 100 and `/psp/alarm_volume` 44 → 100
+(the shipped seed is already 100), so the slider starts at the top of the new
+scale and alarms are not quieter than the master.
