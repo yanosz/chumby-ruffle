@@ -551,3 +551,28 @@ Also observed and not part of this fix: the cancel used to run
 `Alarm.restoreSoundSettings()`, which is why a manual restart after a
 cancelled alarm played at the pre-alarm volume (44 → 16 on the device). Moot
 now for silent cancellers.
+
+---
+
+Number: 22
+Timestamp: 2026-09-10, 19:57
+Title: Sony Dash panel support — parked on the sony-dash branch.
+Status: parked — the fork side of steps 1-4 done, step 5 not started
+Description: The Dash player work is on branch `sony-dash`, tip `0ea50a70b`
+(pushed to origin); dev was rewound to `75f3acf28`, and the appliance repo's
+dev to `e7aa3ee`, so the Pi appliance work continues without the Dash tree in
+the way. On that branch and nowhere else: `claude/dash-panel-survey.md`,
+`fixtures-dash/`, `run-dash.sh`, the bounded-mask work in
+`render/tiny_skia/src/lib.rs`, and issues 11-21 — so numbers 11-21 are
+reserved here and must not be reused on dev. The plan and its checkpoints live
+in the appliance repo (`claude/sony-dash-panel-plan.md`, also branch-only),
+its issue 18 is the counterpart of this block, and its Dash appliance issues
+are 14-17.
+Open on that branch, both wanting the DSI box: issue 20 (brightness via
+`ChumbyNative._setLCDBrightness`, native 5,22, never reaches the backlight on
+platform `yume` — `display/ScreenManager.as:296-304`) and issue 21 (the issue-10
+silent-alarm cancel is probably unguarded on the Dash, `alarm_guard.rs` binds
+by the classic's signature).
+Untracked and in git nowhere, left in this worktree by the step-4 session:
+`fixtures-dash/rootfs/psp/guid` and `fixtures-dash/rootfs/psp/theme.swf` (the
+Dash theme asset — do not commit an extracted SWF).
