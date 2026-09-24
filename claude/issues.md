@@ -552,6 +552,13 @@ Also observed and not part of this fix: the cancel used to run
 cancelled alarm played at the pre-alarm volume (44 → 16 on the device). Moot
 now for silent cancellers.
 
+
+Device-verified 2026-09-24 on chumby-pi-3 (0.9.8): audio alarm 20:01 on a
+stream, silent nightmode alarm 20:02 — `silent alarm "Guard test silent"
+rang — not cancelling ringing alarms`, no `stopAlarmsExcept(): cancelling`,
+the stream played on to the audio alarm's own end; full trace in chumby-pi
+`claude/issues.md` #13. Also noted there: the TYPE_NONE branch's
+unbalanced `_alarmRefCount` decrement, stock and inert (never read).
 ---
 
 Number: 22
