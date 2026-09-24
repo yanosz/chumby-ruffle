@@ -652,7 +652,7 @@ scale and alarms are not quieter than the master.
 Number: 25
 Timestamp: 2026-09-24, 10:30
 Title: A forward step of the wall clock leaves every enabled alarm dead until restart.
-Status: documented, fix deferred (Jan, 2026-09-24)
+Status: remedied outside the player — the appliance supervisor restarts the panel on a clock step > 15 s (chumby-pi `claude/watchdog-plan.md`); the player's part is issue 27
 Description: Measured on chumby-pi-3 — the appliance record is chumby-pi
 issue 21. The player started with the clock 5 d 15 h slow (no RTC; NTP stepped
 it later), and both enabled daily alarms have logged
@@ -680,7 +680,7 @@ every enabled alarm. Consumer list for `_alarmTime`, `startAlarm` and
 Number: 26
 Timestamp: 2026-09-24, 10:50
 Title: The panel's WLAN display cannot tell a usable link from a loud one.
-Status: documented, no change planned yet
+Status: display unchanged; mitigated by the appliance — NetworkManager's connectivity check plus a panel restart when connectivity returns, which refreshes the boot-time snapshot (chumby-pi `claude/watchdog-plan.md`)
 Description: Player side of chumby-pi issue 22 (WLAN shown as good, not
 usable; no log survived). How each field is produced:
 
