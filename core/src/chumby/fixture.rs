@@ -49,12 +49,13 @@ impl FixtureHost {
         tracing::info!(target: "chumby_host",
             "FixtureHost at {} ({} exec fixtures)", root.display(), exec_manifest.len());
 
-        // Real hardware's /tmp is a ramdisk; ours persists. The resume
+        // /tmp outlives the process: on the appliance it is the real
+        // tmpfs /tmp (kept across restarts, emptied at boot — chumby-pi
+        // watchdog plan D8), on the desktop a directory. The resume
         // banner (/tmp/musicsource) must not survive a restart:
         // MP3FilesPlayer.resumeFrom replays an in-memory track list a
         // fresh process doesn't have, leaving a live-looking PLAY button
-        // inert (found 2026-07-11). Full /tmp volatility is a recorded
-        // gap (requirements §3).
+        // inert (found 2026-07-11).
         let _ = std::fs::remove_file(rootfs_path.join("tmp/musicsource"));
 
         // Seed volume from the persisted /psp/volume fixture so that
