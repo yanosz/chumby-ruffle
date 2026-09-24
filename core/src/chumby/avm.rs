@@ -84,6 +84,14 @@ pub fn method<'gc>(
     super::empty_channel::apply(activation);
     // One-shot: a silent (type="none") alarm must not cancel a sounding one.
     super::alarm_guard::apply(activation);
+    // A pending supervisor restart quits once the panel is idle — checked
+    // only at the per-frame _bent poll, the first statement of
+    // BendSensor.onEnterFrame (F2:3423). Inside other natives the alarm
+    // flags can be half-updated: snoozeAlarm clears _alarmRinging before it
+    // sets _alarmSnoozing (F2:10973-10980).
+    if index == 25 {
+        super::restart::apply(activation);
+    }
 
     let result = dispatch(activation, index, name, args, &host_args)?;
 

@@ -3180,10 +3180,12 @@ fn run_mouse_pick<'gc>(
     let result = run_mouse_pick_inner(context, require_button_mode);
     // chumby: click-target diagnostic. Silent unless RUST_LOG
     // enables chumby_pick=debug; found the WidgetPlayer button-mode bug.
+    // Also stamps the last screen press for restart-when-idle.
     if context
         .input
         .is_mouse_down(crate::events::MouseButton::Left)
     {
+        crate::chumby::restart::stamp_tap();
         tracing::debug!(target: "chumby_pick",
             "pick at {:?} (button_mode={require_button_mode}) -> {}",
             *context.mouse_position,

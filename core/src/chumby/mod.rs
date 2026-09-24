@@ -18,6 +18,7 @@
 //! - `brightness`: real backlight behind the panel's brightness writes
 //!   (kernel backlight sysfs, or the owner's `brightness_ctl` executable)
 //! - `input`: simulated-input control channel (stdin + FIFO line commands)
+//! - `restart`: restart-when-idle requests from the appliance supervisor
 //! - `music_sources`: VM-level removal of music sources the appliance
 //!   cannot serve from `MusicPlayer.musicSources`
 //! - `ui_policy`: declarative dim/disable of panel controls the host
@@ -38,6 +39,7 @@ pub mod music_sources;
 pub mod navigator;
 pub mod real_ident;
 pub mod real_net;
+pub mod restart;
 pub mod ui_policy;
 
 pub use fixture::FixtureHost;

@@ -704,3 +704,45 @@ usable; no log survived). How each field is produced:
   (F2:9696), `exec://wget -T 10 … crossdomain.xml; echo $?`, driven only by
   `WidgetPlayer.checkNetworkStatus` in `beAClock` (F2:5357). `RealNetHost`
   has no handler for it; what the fixture host answers was not checked.
+
+---
+
+Number: 27
+Timestamp: 2026-09-24, 14:30
+Title: restart-when-idle — the player yields to the appliance supervisor.
+Status: built and desktop-verified; the supervisor that sends it is chumby-pi work (watchdog plan, step 3c)
+Description: The appliance's new supervisor (chumby-pi
+`claude/watchdog-plan.md`, D4) restarts the panel on a clock step or when
+connectivity returns, but must not while an audio alarm rings or snoozes,
+nor within 60 s of a screen press. That decision is taken in the player,
+where the state lives, so no alarm can start between check and kill.
+
+`core/src/chumby/restart.rs`: control-FIFO verbs `restart-when-idle` and
+`restart-cancel` (`input.rs`); the last press stamped in the existing
+chumby block of `run_mouse_pick` (`core/src/player.rs`, covers mouse,
+touch and FIFO clicks; a long-press counts, a bend does not — Jan); the
+panel's own flags read from `AlarmSet.alarmSet._alarms[i]` — `_type`
+(`"none"` never holds), `_alarmRinging`, `_alarmSnoozing` (F2:11779,
+11230-11236); quit through `invoke_fs_command("quit")`, exit 0 (a
+dedicated exit code would need a `desktop/src/main.rs` hook — Jan accepted
+0, the supervisor knows it asked).
+
+Found during verification, fixed: checked inside every native call, the
+request was granted in the middle of `Alarm.snoozeAlarm`, which clears
+`_alarmRinging` and sets `_alarmSnoozing` a few statements later
+(F2:10973-10980) and calls natives in between — the player quit at the
+snooze. `apply` now runs only at the per-frame `_bent` poll (index 25), the
+first statement of the top-level `BendSensor.onEnterFrame` (F2:3421-3429),
+where no panel function is half-way through.
+
+Desktop runs (release build, tiny-skia, scratch fixtures, 2026-09-24):
+- idle: request → `panel idle — quitting` 50 ms later, exit 0;
+- press: `click`, request → held ("screen pressed less than 60 s ago");
+  `restart-cancel` → still running 69 s after the press; new request →
+  quit within 61 ms;
+- alarm: a one-shot beep alarm rings, request → held ("audio alarm");
+  bend → snooze, still held for the snooze minute; re-ring, still held;
+  TURN OFF ALARM clicked → held by the press; quit exactly 60 s after it,
+  exit 0.
+Not run separately: a ringing `type="none"` alarm — it auto-dismisses
+inside `ringAlarm`, and the `_type` test excludes it.

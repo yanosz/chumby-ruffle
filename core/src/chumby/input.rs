@@ -11,6 +11,9 @@
 //! bend up     release
 //! click X Y   left-click at window coordinates (screenshot pixels)
 //! drag X1 Y1 X2 Y2   press at 1, glide to 2, release (sliders)
+//! restart-when-idle  quit once no audio alarm rings/snoozes and the screen
+//!             has been untouched for 60 s (restart.rs; the supervisor's)
+//! restart-cancel     withdraw that request
 //! ```
 //!
 //! Unknown commands are logged and ignored, so the protocol can grow with
@@ -83,6 +86,8 @@ fn handle(command: &str) {
         "bend" | "tap" => host::tap_bend(),
         "bend down" => host::set_bent(true),
         "bend up" => host::set_bent(false),
+        "restart-when-idle" => super::restart::request(),
+        "restart-cancel" => super::restart::cancel(),
         other => {
             if !pointer_command(other) {
                 tracing::warn!(target: "chumby_host", "unknown control command {other:?}");
