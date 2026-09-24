@@ -646,3 +646,61 @@ corrected; they still said the tone was exempt.
 Panel-side on the box: `/psp/volume` 32 → 100 and `/psp/alarm_volume` 44 → 100
 (the shipped seed is already 100), so the slider starts at the top of the new
 scale and alarms are not quieter than the master.
+
+---
+
+Number: 25
+Timestamp: 2026-09-24, 10:30
+Title: A forward step of the wall clock leaves every enabled alarm dead until restart.
+Status: documented, fix deferred (Jan, 2026-09-24)
+Description: Measured on chumby-pi-3 — the appliance record is chumby-pi
+issue 21. The player started with the clock 5 d 15 h slow (no RTC; NTP stepped
+it later), and both enabled daily alarms have logged
+`rings in -544945 seconds, at:Thu Sep 17 08:00:00` ever since.
+
+The panel's own logic, unpatched: `Alarm.startAlarm` (F2:10868) fixes
+`_alarmTime` once, via `computeNextAlarmTimeDaily` (F2:10805) relative to
+`new Date()` at that moment. `Alarm.step` (F2:10897) rings only while
+`now - _alarmTime` is in `[0, RING_WINDOW]` (F2:10910, 15000 ms at F2:10186),
+and a new time is computed only after a ring. A step past the window leaves
+the alarm outside it for good. The only panel path that would re-arm — the
+periodic reload in `AlarmSet.step` — is `ONE_YEAR` without the
+`alarmReloadInterval` FlashVar (F2:11784; see issue 10's consumer table).
+
+Unrelated to issue 10: no alarm reaches `ringAlarm`, so `alarm_guard.rs` never
+runs.
+
+Remedy candidate if the player side is chosen (appliance issue 21, option B):
+detect a wall-clock step against monotonic time and recompute `_alarmTime` for
+every enabled alarm. Consumer list for `_alarmTime`, `startAlarm` and
+`computeNextAlarmTime*` still to be made before any change.
+
+---
+
+Number: 26
+Timestamp: 2026-09-24, 10:50
+Title: The panel's WLAN display cannot tell a usable link from a loud one.
+Status: documented, no change planned yet
+Description: Player side of chumby-pi issue 22 (WLAN shown as good, not
+usable; no log survived). How each field is produced:
+
+- `signal_strength` exec → `RealNetHost::signal_strength_xml`
+  (`real_net.rs:75`): default-route interface from `/proc/net/route`; if it
+  is wireless, `/proc/net/wireless` `link` rescaled 0-70 → percent
+  (`parse_proc_wireless`, `real_net.rs:263`). cfg80211's wext compat derives
+  that `link` from the station signal alone (signal + 110 dBm, clamped to
+  −110…−40) — consistent with the captured sample, 63 at −47 dBm
+  (`real_net.rs:370`); the kernel formula itself is not re-read here.
+  `connected="1"` needs only the wireless default route and a
+  `/proc/net/wireless` line; the status column, gateway and DNS are not read.
+- Polling: `WifiIndicator` every `FRAME_COUNT = 60` frames (F2:8076, loop at
+  F2:8065); the Info screen calls `ChumbyNative.backtick("signal_strength")`
+  on each open (F2:27226). Both live.
+- `network_status.sh` (F2:286) runs once, from the boot chain
+  (`gotMacAddress` → `fetchNetworkStatus`, F2:253); `gotNetworkStatus`
+  (F2:294) fills `Object._chumby.ip/netmask/gateway/nameserver1/2/
+  networkType/ssid` and nothing refreshes them. The Info screen prints those.
+- The panel's only reachability probe is `NetworkStatus.checkStatus`
+  (F2:9696), `exec://wget -T 10 … crossdomain.xml; echo $?`, driven only by
+  `WidgetPlayer.checkNetworkStatus` in `beAClock` (F2:5357). `RealNetHost`
+  has no handler for it; what the fixture host answers was not checked.
