@@ -1,0 +1,138 @@
+# UI policy: controls of controlpanel.swf that this player cannot honour,
+# neutralized from the Rust side. Compiled in via include_str! — file format,
+# selector syntax and action semantics are documented in ui_policy.rs, the
+# mechanism in claude-docs/design.md §5. Editing a rule needs a rebuild.
+#
+# The Pi OS owns timezone and NTP (systemd-timesyncd), so on the clock
+# settings screen (Settings → TIME/DATE) the timezone is display-only and
+# time-sync selection is off limits; only the 12/24h checkbox stays live.
+#
+# Selector segments: name:<instanceName> (bare = same) or depth:<N> (raw
+# PlaceObject tag depth). The depth alternatives exist because the settings
+# grid (DS1748) and the clock panel (DS1736) are placed without instance
+# names — their AVM1 auto-names depend on navigation history.
+# Chain: controlPanel → [settings grid @15] → [clock panel @1] → timePanel.
+
+# "Set time from the Internet" checkbox: NTP is always on (the OS syncs
+# time); the checkbox stays visible/checked but dimmed and inert.
+[[rule]]
+id        = "clock-ntp-toggle"
+action    = "disable"
+selectors = [
+  "controlPanel/depth:15/depth:1/name:timePanel/name:ntpButton",
+  "controlPanel/depth:15/depth:1/depth:1/depth:46",
+]
+
+# Its label dims with it (reads as one disabled unit — UI1 decision 3).
+[[rule]]
+id        = "clock-ntp-label"
+action    = "disable"
+selectors = [
+  "controlPanel/depth:15/depth:1/name:timePanel/name:ntpLabel",
+  "controlPanel/depth:15/depth:1/depth:1/depth:52",
+]
+
+# SET TIME ZONE globe: timezone comes from the OS; the globe + city text
+# stay as read-only display, the picker (E12 map) becomes unreachable.
+[[rule]]
+id        = "clock-set-timezone"
+action    = "disable"
+selectors = [
+  "controlPanel/depth:15/depth:1/name:timePanel/name:setTimezoneButton",
+  "controlPanel/depth:15/depth:1/depth:1/depth:24",
+]
+
+# Settings menu (E0, grid DS1748 @ controlPanel depth:15) entries for
+# features the Pi does not expose through the panel. Disabling the menu
+# icon (named child of the grid) makes the whole sub-panel unreachable —
+# the gotoAndStop("<frame>") in DefineSprite_1748/frame_1 never fires.
+# Kept live: clockButton (E5), volumeButton (E1), doneButton,
+# microphoneButton (not requested).
+
+# NETWORK: the Pi configures Wi-Fi/Ethernet at the OS level; the panel's
+# network wizard (E3 → DS612) is a no-op here.
+[[rule]]
+id        = "settings-network"
+action    = "disable"
+selectors = ["controlPanel/depth:15/name:networkButton"]
+
+# CHUMBY INFO (E6): deliberately NOT disabled — it is the gateway to the Info
+# screen (E6) and the Licenses viewer (E7), both of which we ship. Its geek
+# button IS disabled (unwanted). The InfoPanel (DS1665) is placed as
+# "info" on the settings grid's "info" frame, and the button is a named
+# child — no depth fallback, and depth:1 would collide with the clock
+# panel's slot on another frame of the same grid.
+
+# The "π" geek-mode trigger (invisible hit area, onRelease directly on it).
+[[rule]]
+id        = "info-geek"
+action    = "disable"
+selectors = ["controlPanel/depth:15/name:info/name:piButton"]
+
+# INTRO: live since the playIntro replacement (intro.rs) — but only when
+# the movie it stages, rootfs /usr/widgets/intro.swf, actually exists.
+# The intro is firmware (owner-copied, not downloadable); absent, the
+# button would stage a load that never completes: a black dead-end.
+# Lifts by itself once the owner copies the file.
+[[rule]]
+id        = "info-intro"
+action    = "disable"
+only_without_intro = true
+selectors = ["controlPanel/depth:15/name:info/name:introButton"]
+
+# TOUCHSCREEN (E4): calibration is meaningless on the Pi's display path.
+[[rule]]
+id        = "settings-touchscreen"
+action    = "disable"
+selectors = ["controlPanel/depth:15/name:touchscreenButton"]
+
+# BRIGHTNESS (E2): disabled only while no brightness backend exists — no
+# kernel backlight found and no brightness_ctl configured (brightness.rs).
+# With a backend the button is live: sliders (altBrightness) on the
+# default path, the bright/dim radio view under brightness_ctl.
+[[rule]]
+id        = "settings-brightness"
+action    = "disable"
+only_without_brightness = true
+selectors = ["controlPanel/depth:15/name:brightnessButton"]
+
+# Main control-panel bar: the "mainButtons" sprite (controlPanel frame
+# "main"), whose controls are all explicitly named children — a single
+# named selector suffices (no depth fallback, same as the settings icons).
+
+# CHANNEL (D1-D7): switching/adding channels needs remote channel download
+# + registration. With access_chumby_com on (and registered), the account's
+# channels are live, so the picker works — the rule lifts. Off, this build
+# ships ONE boot-generated local channel = all installed widgets, so the
+# channel picker/info/add/reload is a dead-end; disabling the button makes
+# the whole "channel" sub-panel (controlPanel frame "channel", DS1627)
+# unreachable.
+[[rule]]
+id        = "main-channel"
+action    = "disable"
+only_without_chumby_access = true
+selectors = ["controlPanel/name:mainButtons/name:channelButton"]
+
+# DELETE (B8): removing a widget only means something with server-side
+# channel management, which access_chumby_com provides — so the rule lifts
+# when the flag is on. Off, the local channel is regenerated from the
+# shipped widgets at boot, so a delete cannot persist — dead-end; disable it.
+[[rule]]
+id        = "main-delete"
+action    = "disable"
+only_without_chumby_access = true
+selectors = ["controlPanel/name:mainButtons/name:deleteButton"]
+
+# SEND (B10) and RATE (B7): both are scope=skip (send is an excluded
+# social feature; rating needs the widget catalog service). updateButtons
+# keeps them visible/live whenever a widget shows, so disable them too so
+# no skip control on the bar is a live dead-end (user 2026-07-08).
+[[rule]]
+id        = "main-send"
+action    = "disable"
+selectors = ["controlPanel/name:mainButtons/name:sendButton"]
+
+[[rule]]
+id        = "main-rate"
+action    = "disable"
+selectors = ["controlPanel/name:mainButtons/name:rateButton"]
