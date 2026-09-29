@@ -14,41 +14,23 @@ Concepts: [design.md](design.md). What the player owes the panel:
 
 ## 1. Branch and commit policy
 
-**One feature branch per working session, squashed on merge.** Branch from
-the fork's default branch (`chumby`) and do the session's work in as many
-commits as are useful. Do not amend and force-push a long-lived shared
-commit — that was the old discipline and it is retired.
-
-**Finishing a session means opening the pull request.** Push the branch and
-create the PR yourself; Jan reviews and merges it with GitHub's *Squash and
-merge*. Leaving a pushed branch with no PR is an unfinished session.
-
-```sh
-git push -u origin <branch>
-gh pr create --repo yanosz/chumby-ruffle --base chumby --head <branch> \
-    --title "…" --body "…"
-```
+Work happens on `dev`. **No pull requests.** The fork's default branch
+`chumby` is exactly two commits on the pinned upstream master (§6): commit 1
+adds every path upstream does not have, commit 2 carries `dev`'s full tree —
+the edits to upstream files. A release regenerates that pair from `dev`
+(never a merge or a third commit), checks that its tree equals `dev`'s, keeps
+the old tip as `chumby-before-regen-<date>`, and force-pushes `chumby`.
 
 `origin` is the GitHub fork (`yanosz/chumby-ruffle`) and `upstream` is
-`ruffle-rs/ruffle`, so a plain `git push -u origin <branch>` is right.
-Keep `--repo` on `gh pr create` anyway: with two GitHub remotes, `gh`
-may otherwise resolve against `upstream` and open the PR on
-ruffle-rs/ruffle. (An earlier claim here that `origin` was a local
-clone was stale — verified against `git remote -v`, 2026-07-10.)
+`ruffle-rs/ruffle`; push to `origin` only.
 
-`chumby.yml` runs on the PR, but **on a pull request it only builds.**
-Starting the movie needs `controlpanel.swf`, which is copyrighted and lives
-on a private share, so the movie-start check runs on push to `chumby` — that
-is, after the squash-merge — and on manual dispatch. A PR proves it compiles;
-`chumby` proves it runs.
+`chumby.yml` runs on a push to `chumby` and on manual dispatch (a dispatch on
+`dev` builds and starts the panel, publishing nothing). Starting the movie
+needs `controlpanel.swf`, which is copyrighted and lives on a private share.
+Run the movie-start check locally before regenerating the pair (§5).
 
-The consequence is that CI cannot catch a dead ASnative hook before a merge.
-Run the movie-start check locally before opening the PR (§5); that is now the
-only pre-merge gate there is.
-
-The fork's default branch tracks upstream Ruffle with the chumby work
-applied on top. When the pin in chumby-pi moves, the submodule gitlink in
-that repository must be bumped in the same change that depends on it.
+In chumby-pi the gitlink tracks this fork's `dev` head on `dev` and the
+`chumby` pair on `main`, bumped in the same change that depends on it.
 
 ## 2. Layout
 
