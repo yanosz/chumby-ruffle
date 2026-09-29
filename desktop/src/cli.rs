@@ -139,6 +139,25 @@ pub struct Opt {
     #[clap(long, default_value_os_t=get_default_cache_directory())]
     pub cache_directory: std::path::PathBuf,
 
+    /// Chumby fixtures directory (chumby-pi project). Enables the
+    /// chumby host environment, answering ASnative/exec/HTTP/file requests
+    /// from this directory.
+    #[clap(long)]
+    pub chumby_fixtures: Option<std::path::PathBuf>,
+
+    /// FIFO for simulated chumby inputs. Line commands, e.g.
+    /// `echo bend > PATH` presses+releases the bend sensor. Ruffle's
+    /// stdin accepts the same commands regardless.
+    #[clap(long)]
+    pub chumby_control: Option<std::path::PathBuf>,
+
+    /// Render backend. `wgpu` draws through a graphics API (on the chumby's
+    /// hardware that means software Vulkan) and carries the egui GUI;
+    /// `tiny-skia` rasterises on the CPU and presents through shared
+    /// memory, with no Vulkan and no GUI overlay.
+    #[clap(long, default_value = "wgpu")]
+    pub renderer: RendererChoice,
+
     /// Proxy to use when loading movies via URL.
     #[clap(long)]
     pub proxy: Option<Url>,
@@ -306,6 +325,15 @@ impl Opt {
             }
         })
     }
+}
+
+/// Which `RenderBackend` the player builds, and therefore how frames reach
+/// the screen. An unknown value is a clap error, not a fallback.
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, clap::ValueEnum)]
+pub enum RendererChoice {
+    #[default]
+    Wgpu,
+    TinySkia,
 }
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, clap::ValueEnum)]

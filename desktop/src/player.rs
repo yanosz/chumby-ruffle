@@ -23,6 +23,7 @@ use ruffle_frontend_utils::player_options::PlayerOptions;
 use ruffle_frontend_utils::recents::Recent;
 use ruffle_render::backend::RenderBackend;
 use ruffle_render::quality::StageQuality;
+use ruffle_render_tiny_skia::TinySkiaRenderBackend;
 use ruffle_render_wgpu::backend::WgpuRenderBackend;
 use ruffle_render_wgpu::clap::PowerPreference;
 use ruffle_render_wgpu::descriptors::Descriptors;
@@ -105,6 +106,15 @@ impl From<&GlobalPreferences> for LaunchOptions {
     }
 }
 
+/// Where a player's frames go, and therefore which `RenderBackend` it gets.
+pub enum RenderTarget {
+    /// A wgpu texture the frontend composites under the egui GUI.
+    Wgpu(MovieView),
+    /// A CPU pixmap of this size, which the frontend copies into a
+    /// shared-memory buffer. No Vulkan is involved.
+    Software { width: u32, height: u32 },
+}
+
 /// Represents a current Player and any associated state with that player,
 /// which may be lost when this Player is closed (dropped)
 struct ActivePlayer {
@@ -122,8 +132,8 @@ impl ActivePlayer {
         event_loop: EventLoopProxy<RuffleEvent>,
         content_descriptor: &ContentDescriptor,
         window: Arc<Window>,
-        descriptors: Arc<Descriptors>,
-        movie_view: MovieView,
+        descriptors: Option<Arc<Descriptors>>,
+        render_target: RenderTarget,
         font_database: Rc<fontdb::Database>,
         preferences: GlobalPreferences,
         file_picker: FilePicker,
@@ -271,10 +281,22 @@ impl ActivePlayer {
             GameModePreference::Off => false,
         };
 
-        let renderer = WgpuRenderBackend::new(descriptors, movie_view)
-            .map_err(|e| anyhow!(e.to_string()))
-            .expect("Couldn't create wgpu rendering backend");
-        RENDER_INFO.with(|i| *i.borrow_mut() = Some(renderer.debug_info().to_string()));
+        let renderer: Box<dyn RenderBackend> = match render_target {
+            RenderTarget::Wgpu(movie_view) => {
+                let descriptors =
+                    descriptors.expect("wgpu descriptors must exist for the wgpu renderer");
+                let renderer = WgpuRenderBackend::new(descriptors, movie_view)
+                    .map_err(|e| anyhow!(e.to_string()))
+                    .expect("Couldn't create wgpu rendering backend");
+                RENDER_INFO.with(|i| *i.borrow_mut() = Some(renderer.debug_info().to_string()));
+                Box::new(renderer)
+            }
+            RenderTarget::Software { width, height } => {
+                RENDER_INFO
+                    .with(|i| *i.borrow_mut() = Some("tiny-skia (CPU, shared memory)".to_string()));
+                Box::new(TinySkiaRenderBackend::new(width, height))
+            }
+        };
 
         if opt.player.dummy_external_interface.unwrap_or_default() {
             builder = builder.with_external_interface(Box::new(DesktopExternalInterfaceProvider {
@@ -299,9 +321,13 @@ impl ActivePlayer {
             }
         });
 
+        // Chumby host environment: wrap the navigator so exec:// and
+        // chumby.com URLs are answered by fixtures.
+        let navigator = ruffle_core::chumby::navigator::ChumbyNavigator::new(navigator);
+
         builder = builder
             .with_navigator(navigator)
-            .with_renderer(renderer)
+            .with_boxed_renderer(renderer)
             .with_storage(preferences.storage_backend().create_backend(&opt))
             .with_notification_sender(notification_sender)
             .with_fs_commands(Box::new(DesktopFSCommandProvider {
@@ -429,7 +455,9 @@ pub struct PlayerController {
     player: Option<ActivePlayer>,
     event_loop: EventLoopProxy<RuffleEvent>,
     window: Arc<Window>,
-    descriptors: Arc<Descriptors>,
+    /// Absent when the frontend presents in software: nothing built a wgpu
+    /// device in that mode.
+    descriptors: Option<Arc<Descriptors>>,
     font_database: Rc<fontdb::Database>,
     preferences: GlobalPreferences,
     file_picker: FilePicker,
@@ -439,7 +467,7 @@ impl PlayerController {
     pub fn new(
         event_loop: EventLoopProxy<RuffleEvent>,
         window: Arc<Window>,
-        descriptors: Arc<Descriptors>,
+        descriptors: Option<Arc<Descriptors>>,
         font_database: fontdb::Database,
         preferences: GlobalPreferences,
         file_picker: FilePicker,
@@ -459,7 +487,7 @@ impl PlayerController {
         &mut self,
         opt: &LaunchOptions,
         content_descriptor: &ContentDescriptor,
-        movie_view: MovieView,
+        render_target: RenderTarget,
     ) {
         self.player = Some(ActivePlayer::new(
             opt,
@@ -467,7 +495,7 @@ impl PlayerController {
             content_descriptor,
             self.window.clone(),
             self.descriptors.clone(),
-            movie_view,
+            render_target,
             self.font_database.clone(),
             self.preferences.clone(),
             self.file_picker.clone(),

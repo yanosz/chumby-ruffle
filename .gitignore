@@ -19,3 +19,34 @@ RECOVER_*.fla
 
 # A developers local Flash Player harness config
 .flash_players.toml
+
+# --- chumby fork ---------------------------------------------------------
+# Copyrighted chumby material — never commit any of it. controlpanel.swf
+# goes in swf-assets/ (self-ignoring); widget SWFs, their preview
+# thumbnails and the alarm tones are chumby firmware too. The appendix is
+# the decompiled panel; the screenshots show its artwork.
+/fixtures/**/*.swf
+/fixtures/**/*.mp3
+/fixtures/**/*.wav
+/fixtures/widgets/*.jpg
+# …except the USB-music test tones: sine waves we generate ourselves
+# (fixtures/README.md), nothing chumby about them.
+!/fixtures/rootfs/mnt/usb/**/*.mp3
+/claude-docs/appendix/
+/claude-docs/images/
+
+# chumby-widget-channel's change-detection cache (runtime state; the
+# committed profile + *.widget.xml sidecars are the source of truth).
+/fixtures/widgets/.channel.sig
+
+# Downloaded remote-channel widgets land here (WidgetCache: /tmp/widgetcache):
+# copyrighted SWFs (already covered above) plus their thumbnails and the
+# cache manifest — runtime state, never committed. Populated only on real
+# hardware under access_chumby_com; a dev box has no serial to reach it.
+/fixtures/rootfs/**/widgetcache/
+
+# Per-box dev identity, generated at first start (real_ident.rs).
+/fixtures/rootfs/psp/guid
+
+# Per-box player config (config.rs); absent means defaults.
+/fixtures/player.toml

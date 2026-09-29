@@ -13,6 +13,11 @@ jobs:
     name: Test the Dockerfile
     runs-on: ubuntu-24.04
 
+    # chumby: the fork ships no browser extension, and its core does not
+    # build for wasm32 (core/src/chumby uses std::os::unix). Same guard the
+    # other inherited scheduled workflows already carry.
+    if: github.repository == 'ruffle-rs/ruffle'
+
     steps:
       - uses: actions/checkout@v7
 
