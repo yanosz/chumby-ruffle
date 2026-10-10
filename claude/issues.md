@@ -1241,7 +1241,7 @@ brightness UI and night mode on chumby-pi-3. Size: S-M. Patch surface:
 Number: 21
 Timestamp: 2026-09-09, 21:40
 Title: Dash: the silent-alarm cancel bug is probably unguarded there.
-Status: open — found by issue 19, not reproduced yet
+Status: known issue — accepted 2026-10-10, not to be fixed
 Description: Issue 10 on the classic: a silent (`type="none"`) alarm firing
 while another alarm sounds cancels the sounding one, because
 `Alarm.ringAlarm` opens with `_alarmSet.stopAlarmsExcept(this)`. The Dash
@@ -1257,6 +1257,10 @@ reproduces, the guard is a path change plus that argument. Note the Dash
 also has scheduler events (`com/chumby/event/*`, `/psp/events`) which can
 act on alarms, and which the classic does not have. Size: S to reproduce,
 S-M to fix.
+
+UPDATE 2026-10-10: accepted as a known issue, not fixed and not
+reproduced. Jan: it concerns the real chumby devices too — the stock
+behaviour, not a defect of the port. It no longer gates step 5.
 
 ---
 
