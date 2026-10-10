@@ -1220,7 +1220,7 @@ same binary, compared line by line, plus the export.
 Number: 20
 Timestamp: 2026-09-09, 21:40
 Title: Dash: brightness never reaches the backlight.
-Status: open — found by issue 19, needs the DSI box to verify
+Status: implemented 2026-10-10 — unit- and desktop-verified; the box run is open
 Description: `display/ScreenManager.as:296-304`: on any platform that is
 not stormwind — ours is `yume` — `setRawBrightness` calls
 `ChumbyNative._setLCDBrightness(ceil(brightness * 655.35))`, native 5,22.
@@ -1235,6 +1235,26 @@ is exactly what the box has to answer. Work: route 5,22 through the same
 two backends, scaled back from the 0-65535 the panel sends, then check the
 brightness UI and night mode on chumby-pi-3. Size: S-M. Patch surface:
 `core/src/chumby/` only.
+
+UPDATE 2026-10-10, implemented. The Dash has two controls, not one:
+the level through 5,22, and an on/off switch through `_setLCDMute`
+LCD_OFF / LCD_ON — `gadgets/LCDBacklight.as`, a `StateKeeper` that
+`StandbyPanel.as:26,67` and the dark night mode
+(`NightModeDialog.as:66-90`) use; standby switches off without touching
+the level. So, in kernel-backlight mode: 5,22 → `Backlight::set_raw`
+(and the store, for `_getLCDBrightness`, which `StandbyPanel` reads);
+5,20 LCD_OFF → 0, LCD_ON → the last level back; a level set while off
+waits for on (`Backlight::set_on`, `brightness.rs`). The Dash never sends
+LCD_DIM. Consumers: the classic calls 5,20 only on hw 3.6/3.7
+(F2:9020-9029, `brightness_ctl` mode, unchanged) and never 5,22, so
+kernel mode changes nothing for it; the appliance needs no change (same
+keys, udev rule already shipped). Not covered: `brightness_ctl` mode on
+the Dash — the switch reaches the executable as 0/2, the levels (night,
+auto-dim) have no discrete backend. Verified: unit tests
+`test_switch_keeps_the_level`, `test_dash_brightness_natives_drive_backlight`
+(60 chumby tests pass); classic movie-start check passes; the Dash run logs
+`_setLCDMute(0)` then `_setLCDBrightness(65535)` at start. Still to see on
+the DSI box: the slider, night mode and standby moving the real backlight.
 
 ---
 

@@ -19,9 +19,16 @@
 //!
 //! Neither available → the `settings-brightness` ui-policy rule keeps the
 //! settings button disabled (`only_without_brightness`).
+//!
+//! The Dash (platform `yume`) reaches the kernel backlight differently:
+//! `setRawBrightness` calls `_setLCDBrightness` (5,22) with the same
+//! 0–65535, and standby / dark night mode switch the screen with
+//! `_setLCDMute` LCD_OFF / LCD_ON, independent of the level (Dash
+//! `display/ScreenManager.as:295-306`, `gadgets/LCDBacklight.as`).
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
 pub struct Backlight {
     brightness_file: PathBuf,
@@ -30,6 +37,15 @@ pub struct Backlight {
     max: f64,
     /// Sliders write many times a second while dragged; warn once, not per write.
     write_failed: AtomicBool,
+    state: Mutex<Lcd>,
+}
+
+/// The last panel-space level, and whether the screen is switched off. A
+/// level set while off is kept for the switch back on, not shown.
+#[derive(Default)]
+struct Lcd {
+    level: Option<f64>,
+    off: bool,
 }
 
 impl Backlight {
@@ -91,6 +107,7 @@ impl Backlight {
             brightness_file: dir.join("brightness"),
             max: capped,
             write_failed: AtomicBool::new(false),
+            state: Mutex::new(Lcd::default()),
         })
     }
 
@@ -98,6 +115,25 @@ impl Backlight {
     /// panel's screen-off state installs its own touch-to-restore handler),
     /// but any non-zero input lands at ≥1 so "dimmest" cannot round to "off".
     pub fn set_raw(&self, value: f64) {
+        let mut lcd = self.state.lock().unwrap();
+        lcd.level = Some(value);
+        if !lcd.off {
+            self.write(value);
+        }
+    }
+
+    /// The Dash's LCD switch: off writes 0, on restores the last level.
+    pub fn set_on(&self, on: bool) {
+        let mut lcd = self.state.lock().unwrap();
+        lcd.off = !on;
+        match (on, lcd.level) {
+            (false, _) => self.write(0.0),
+            (true, Some(level)) => self.write(level),
+            (true, None) => {}
+        }
+    }
+
+    fn write(&self, value: f64) {
         let value = value.clamp(0.0, 65535.0);
         let mut scaled = (value / 65535.0 * self.max).round() as u32;
         if value > 0.0 {
@@ -248,6 +284,35 @@ mod tests {
         let b = Backlight::detect_in(&dir, 25.0).unwrap();
         b.set_raw(65535.0);
         assert_eq!(read(), 1);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The Dash's switch: off darkens without forgetting the level, a level
+    /// set while off waits for on, and on before any level writes nothing.
+    #[test]
+    fn test_switch_keeps_the_level() {
+        let dir = tmp("switch");
+        fake_device(&dir, "rpi_backlight", "255");
+        std::fs::write(dir.join("rpi_backlight/brightness"), "7").unwrap();
+        let b = Backlight::detect_in(&dir, 100.0).unwrap();
+        let read = || -> u32 {
+            std::fs::read_to_string(dir.join("rpi_backlight/brightness"))
+                .unwrap()
+                .parse()
+                .unwrap()
+        };
+
+        b.set_on(true); // the constructor's LCD_ON, before any level
+        assert_eq!(read(), 7);
+        b.set_raw(65535.0);
+        assert_eq!(read(), 255);
+        b.set_on(false); // standby
+        assert_eq!(read(), 0);
+        b.set_raw(32767.0); // level changes while off stay dark
+        assert_eq!(read(), 0);
+        b.set_on(true);
+        assert_eq!(read(), 127);
 
         std::fs::remove_dir_all(&dir).ok();
     }

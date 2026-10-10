@@ -339,15 +339,38 @@ impl ChumbyHost for FixtureHost {
             // this native (LCD_ON 0 / LCD_DIM 1 / LCD_OFF 2). With
             // brightness_ctl configured — the mode that presents hw 3.7 —
             // the level goes to the owner's executable; the store keeps
-            // _getLCDMute (5,19) honest either way.
+            // _getLCDMute (5,19) honest either way. Without brightness_ctl
+            // only the Dash calls it: LCD_OFF / LCD_ON switch the kernel
+            // backlight (brightness.rs); it never sends LCD_DIM.
             "_setLCDMute" => {
-                if let (Some(program), Some(HostValue::Number(level))) =
-                    (self.config.brightness_ctl.as_deref(), args.first())
-                {
-                    brightness::run_ctl(program, *level);
+                match (self.config.brightness_ctl.as_deref(), &self.fs.backlight, args.first()) {
+                    (Some(program), _, Some(HostValue::Number(level))) => {
+                        brightness::run_ctl(program, *level)
+                    }
+                    (None, Some(backlight), Some(HostValue::Number(level))) => match *level as i64 {
+                        0 => backlight.set_on(true),
+                        2 => backlight.set_on(false),
+                        _ => {}
+                    },
+                    _ => {}
                 }
                 if let Some(v) = args.first() {
                     self.native_state.lock().unwrap().insert("LCDMute", v.clone());
+                }
+                HostValue::Undefined
+            }
+
+            // (5,22): the Dash's brightness, 0–65535 like the classic's
+            // /proc/sys/sense1/brightness write. Stored too, for
+            // _getLCDBrightness (5,21), which StandbyPanel reads.
+            "_setLCDBrightness" => {
+                if let (Some(backlight), Some(HostValue::Number(v))) =
+                    (&self.fs.backlight, args.first())
+                {
+                    backlight.set_raw(*v);
+                }
+                if let Some(v) = args.first() {
+                    self.native_state.lock().unwrap().insert("LCDBrightness", v.clone());
                 }
                 HostValue::Undefined
             }
@@ -902,6 +925,37 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
         assert_eq!(host.native(19, "_getLCDMute", &[]), HostValue::Number(2.0));
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// The Dash drives the kernel backlight with natives, not the /proc
+    /// knob: 5,22 sets the level, 5,20 LCD_OFF / LCD_ON switch it, and the
+    /// level still round-trips through _getLCDBrightness (5,21).
+    #[test]
+    fn test_dash_brightness_natives_drive_backlight() {
+        let root = std::env::temp_dir()
+            .join(format!("chumby-fixture-dash-backlight-test-{}", std::process::id()));
+        let dev = root.join("class-backlight/rpi_backlight");
+        std::fs::create_dir_all(&dev).unwrap();
+        std::fs::write(dev.join("max_brightness"), "255").unwrap();
+        std::fs::write(dev.join("brightness"), "0").unwrap();
+        let read = || -> u32 {
+            std::fs::read_to_string(dev.join("brightness")).unwrap().trim().parse().unwrap()
+        };
+
+        let mut host = FixtureHost::new(&root);
+        host.fs.backlight = Backlight::detect_in(&root.join("class-backlight"), 100.0);
+
+        host.native(22, "_setLCDBrightness", &[HostValue::Number(65535.0)]);
+        assert_eq!(read(), 255);
+        host.native(22, "_setLCDBrightness", &[HostValue::Number(1966.0)]); // night 3
+        assert_eq!(read(), 8);
+        assert_eq!(host.native(21, "_getLCDBrightness", &[]), HostValue::Number(1966.0));
+        host.native(20, "_setLCDMute", &[HostValue::Number(2.0)]); // standby
+        assert_eq!(read(), 0);
+        host.native(20, "_setLCDMute", &[HostValue::Number(0.0)]);
+        assert_eq!(read(), 8);
 
         std::fs::remove_dir_all(&root).ok();
     }
