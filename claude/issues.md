@@ -1220,7 +1220,7 @@ same binary, compared line by line, plus the export.
 Number: 20
 Timestamp: 2026-09-09, 21:40
 Title: Dash: brightness never reaches the backlight.
-Status: implemented 2026-10-10 — unit- and desktop-verified; the box run is open
+Status: implemented 2026-10-10 — unit- and desktop-verified; the box run is part of the CHUMBY_PANEL=dash deploy (chumby-pi plan step 6, Jan 2026-10-11)
 Description: `display/ScreenManager.as:296-304`: on any platform that is
 not stormwind — ours is `yume` — `setRawBrightness` calls
 `ChumbyNative._setLCDBrightness(ceil(brightness * 655.35))`, native 5,22.
