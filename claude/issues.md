@@ -1220,7 +1220,7 @@ same binary, compared line by line, plus the export.
 Number: 20
 Timestamp: 2026-09-09, 21:40
 Title: Dash: brightness never reaches the backlight.
-Status: implemented 2026-10-10 — unit- and desktop-verified; the box run is part of the CHUMBY_PANEL=dash deploy (chumby-pi plan step 6, Jan 2026-10-11)
+Status: implemented 2026-10-10 — unit- and desktop-verified; on chumby-pi-3 2026-10-11 night mode seen working (Jan), the slider and standby not reported
 Description: `display/ScreenManager.as:296-304`: on any platform that is
 not stormwind — ours is `yume` — `setRawBrightness` calls
 `ChumbyNative._setLCDBrightness(ceil(brightness * 655.35))`, native 5,22.
@@ -1255,6 +1255,10 @@ auto-dim) have no discrete backend. Verified: unit tests
 (60 chumby tests pass); classic movie-start check passes; the Dash run logs
 `_setLCDMute(0)` then `_setLCDBrightness(65535)` at start. Still to see on
 the DSI box: the slider, night mode and standby moving the real backlight.
+Box run 2026-10-11 (chumby-pi-3, 4.10.3): Jan, at the box: night mode
+apparently works. The slider and standby were not reported; they stay
+open for the next Dash run. The box was then restored to the classic
+panel (chumby-pi issue 14).
 
 ---
 
