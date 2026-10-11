@@ -1291,7 +1291,7 @@ behaviour, not a defect of the port. It no longer gates step 5.
 Number: 22
 Timestamp: 2026-09-10, 19:57
 Title: Sony Dash panel support — parked on the sony-dash branch.
-Status: parked — the fork side of steps 1-4 done, step 5 not started
+Status: parked again 2026-10-11 — re-scoped goal implemented and box-run; not on dev
 Description: The Dash player work is on branch `sony-dash`, tip `0ea50a70b`
 (pushed to origin); dev was rewound to `75f3acf28`, and the appliance repo's
 dev to `e7aa3ee`, so the Pi appliance work continues without the Dash tree in
@@ -1316,6 +1316,13 @@ the tips above are gone from the branch and kept as
 `sony-dash-before-rebase-20261010`; read the branch, not a hash. Issue 21 is
 accepted as a known issue (Jan: it concerns the real chumby devices too) and
 no longer gates step 5; issue 20 is fixed in this run, before the deploy.
+
+UPDATE 2026-10-11, session end: the panel is 4.10.3; the appliance re-scoped
+the work (its plan, "Re-scoped 2026-10-11"). Fork side added: the Dash alarm
+channel (issue 28), issue 29 (restart-when-idle blind to a Dash alarm,
+known issue). Box run on chumby-pi-3: night mode works (issue 20), the
+slider and standby unreported. Branch pushed (`429eaae77` plus this record);
+not merged to dev.
 
 ---
 
