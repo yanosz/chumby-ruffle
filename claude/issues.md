@@ -686,7 +686,7 @@ Description: The classic's offline route is `-Pbuiltin=1`; on the Dash
 `NORMAL_MODE_STATE` is CHECK_NETWORK → CHECK_AUTHORIZE → CHECK_DATE →
 `doNetworkThings` + `CPMain` → `HomeScreenProxy` → `ThemeLoader`, which needs:
 (a) `Chumby.hasNetwork` true — set from `network_status.sh` through
-`StartupPanelCheckNetwork.as:28` (`!interfacex.hasErrors()`); the desktop run
+`StartupPanelCheckNetwork.as:27` (`!interfacex.hasErrors()`); the desktop run
 got false from the classic fixture, so the Dash's `NetworkStatus.fromXML`
 shape must be checked against `fixtures/exec` (survey §3); (b)
 `needStartNetwork()` false, i.e. `/psp/securityQuestion` and
@@ -714,7 +714,7 @@ widget area. What the Dash needed on the desktop, all fixtures, no code:
 - `/psp/securityQuestion` and `/psp/securityAnswer` present, so
   `needStartNetwork()` (`StartupPanel.as:264-272`) is false. This — not
   `hasNetwork` — is what sent the first run into the network wizard;
-  `hasNetwork` ends true because `StartupPanelCheckNetwork.as:28` uses
+  `hasNetwork` ends true because `StartupPanelCheckNetwork.as:27` uses
   `!hasErrors()`, and the fork's `network_status.sh` answer has no
   `<error>`. (`NetworkStatus.lastStatusResult`, `NetworkStatus.as:29`,
   also wants `up="true"`, which the fork's XML lacks; its three consumers

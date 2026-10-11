@@ -2,8 +2,11 @@
 
 Step 2 of `chumby-pi/claude/sony-dash-panel-plan.md`, 2026-09-09. Fact base:
 the ffdec export in
-`chumby-pi-internal/docs/reference/appendix/controlpanel-dash-1.0.0/scripts/__Packages/`
-(paths below are relative to it unless stated), the companion export
+`chumby-pi-internal/docs/reference/appendix/controlpanel-dash-4.10.3/scripts/__Packages/`
+(paths below are relative to it unless stated; written against the package's
+own 4.10.0, the panel since 2026-10-11 is 4.10.3 — every citation into a
+changed class re-checked and moved that day, the code delta is in
+`resources/dash-controlpanel-4.10.3/README.md`), the companion export
 `…/companions-dash-1.0.0/default_theme/`, and the package scripts in
 `chumby-pi-internal/resources/dash-chumby-hidc10-1.0.0/package/`. Classic
 facts are cited from `chumby-pi-internal/docs/reference/03-environment-contract.md`
@@ -116,11 +119,11 @@ key `themes`) → `PopupBar.hitThemesButton` (`dash/popup/PopupBar.as:168-179`,
 gated by `/psp/parentalControlLevel` and
 `/psp/parentalControlsDisable_Change theme`) → `ThemeSelectorDialog`
 (`settings/themes/ThemeSelectorDialog.as:15-23`) → `ThemesPanel` states
-`loadingThemes → chooseTheme → loadingTheme` (`ThemesPanel.as:33-58`).
+`loadingThemes → chooseTheme → loadingTheme` (`ThemesPanel.as:30-55`).
 
 - `ThemesPanelLoadingThemes.as:10-11` loads the catalog (§1.5).
 - `ThemesPanelChooseTheme` shows it as a 3-per-row grid
-  (`ThemesPanelChooseThemeGridItems.as:12-23`); each cell loads
+  (`ThemesPanelChooseThemeGridItems.as:14-25`); each cell loads
   `thumbnailURL` with a `MovieClipLoader` (`…GridItemIcon.as:21-25`).
 - `ThemesPanelLoadingTheme.as:13-32` fetches the pick: with
   `Chumby.localThemes` it runs `cp <url.slice(8)> /psp/theme.swf; sync; echo $?`,
@@ -128,12 +131,12 @@ gated by `/psp/parentalControlLevel` and
   `<download_theme error="success"/>` it runs
   `cp /tmp/theme.swf /psp/theme.swf; rm /tmp/theme.swf /tmp/theme.swf.sig; sync; echo $?`
   (`:69`), writes `/psp/theme_name.txt` (`:76`), and `ThemesPanel.next`
-  reloads the home screen (`ThemesPanel.as:55-56`).
+  reloads the home screen (`ThemesPanel.as:52-53`).
 - All of that goes through `com/chumby/util/AsynchronousCommand.as:40-72`:
   `XML.load("exec://nice -n 10 " + escape(cmd))`.
 
 The "New" button opens `ThemeWizard` (`chooseLayout → chooseBackground →
-loadingChannels → chooseChannel → enterName`, `ThemeWizard.as:27-50`).
+loadingChannels → chooseChannel → enterName`, `ThemeWizard.as:25-48`).
 Every panel of it only calls `next()` (`ThemeWizardChooseLayout.as` 16
 lines, `…ChooseBackground.as` 12, `…ChooseChannel.as` 16,
 `…EnterName.as:26-30`); `done()` dismisses the dialog
@@ -186,7 +189,7 @@ compare, nothing else, despite its header comment.
 
 ### 1.6 What checks the signature — and when
 
-Two sites, identical: `startup/StartupPanelUpdateTheme.as:119-146` and
+Two sites, identical: `startup/StartupPanelUpdateTheme.as:118-145` and
 `settings/themes/ThemesPanelUpdateTheme.as:102-125`, both running
 
     /usr/bin/verify /psp/theme.swf /psp/theme.swf.sig /etc/sony.pub > /dev/null; echo $?
@@ -318,7 +321,7 @@ in the export, by site:
 | `ap_scan` | `network/AccessPoints.as:10,46` |
 | `network_adapter_list.sh` | `network/NetworkAdapters.as:34` |
 | `delink_request`, `delink_reboot.sh`, `delink_refactory.sh` | `settings/network/NetworkPanelDelinkDoDelink.as:7,29`, `…DelinkResult.as:24`, `settings/deviceinfo/DeviceInfoPanel.as:28` |
-| `list_mounts` | `usb/USBMediaEvents.as:69`, `controlpanel/music/usb/USBMusicPanel.as:122`, `…usbphotos/USBPhotosPanel.as:104`, `…video/usb/USBVideoPanel.as:148` |
+| `list_mounts` | `usb/USBMediaEvents.as:69`, `controlpanel/music/usb/USBMusicPanel.as:122`, `…usbphotos/USBPhotosPanel.as:104`, `…video/usb/USBVideoPanel.as:147` |
 | `metadb --prune <mount>` | `usb/USBVolume.as:130` (MetaDB service also on `127.0.0.1:8085`, `util/MetaDBService.as`) |
 | `imgtool --fb=<n> --fill=0,0,0` | `display/ScreenManager.as:311` |
 | `chumbthumb` | `image/ImageResizer2.as:8` |
