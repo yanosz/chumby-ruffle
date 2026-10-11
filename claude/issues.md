@@ -1532,7 +1532,7 @@ box.
 Number: 29
 Timestamp: 2026-10-11, 19:40
 Title: Dash: restart-when-idle cannot see a ringing alarm.
-Status: open — found while planning chumby-pi Dash step 3; not part of it unless Jan says so
+Status: known issue (Jan, 2026-10-11) — not fixed before the Dash deploy
 Description: Issue 27's idle check, `audio_alarm_active` (`restart.rs:128-145`),
 looks for `_global.AlarmSet.alarmSet._alarms` — the classic's class path.
 The Dash keeps its alarms at `com.chumby.alarm.AlarmSet.instance._alarms`
