@@ -1526,3 +1526,24 @@ and the alarm socket, still playing 8 s later. Classic movie-start check
 passes (exit 124, no panic, `_getPlatform` "ironforge"). Not exercised:
 event tones, the tone preview, `stopalarm` from the alarm screen, and the
 box.
+
+---
+
+Number: 29
+Timestamp: 2026-10-11, 19:40
+Title: Dash: restart-when-idle cannot see a ringing alarm.
+Status: open — found while planning chumby-pi Dash step 3; not part of it unless Jan says so
+Description: Issue 27's idle check, `audio_alarm_active` (`restart.rs:128-145`),
+looks for `_global.AlarmSet.alarmSet._alarms` — the classic's class path.
+The Dash keeps its alarms at `com.chumby.alarm.AlarmSet.instance._alarms`
+(4.10.3 `alarm/Alarm.as:1073-1075`), so on the Dash the lookup finds no
+object, the function answers "no alarms", and the player reports idle.
+Consequence: the appliance supervisor, which asks for `restart-when-idle`
+after a clock step or when the network returns (chumby-pi watchdog plan),
+would get a restart while a Dash alarm rings or snoozes. Same family as
+issue 21 (a guard that binds to classic class paths). Not reproduced —
+read from the code; the Dash alarm fields `_alarmRinging` / `_type` exist
+(`Alarm.as:7,119`), whether `_alarmSnoozing` and the `"none"` type mean
+the same as on the classic is unchecked. Size: S once the fields are
+confirmed.
+
