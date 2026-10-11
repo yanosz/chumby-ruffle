@@ -1482,3 +1482,47 @@ Desktop runs (release build, tiny-skia, scratch fixtures, 2026-09-24):
   exit 0.
 Not run separately: a ringing `type="none"` alarm — it auto-dismisses
 inside `ringAlarm`, and the `_type` test excludes it.
+
+---
+
+Number: 28
+Timestamp: 2026-10-11, 18:05
+Title: Dash: alarm and event tones are silent.
+Status: implemented 2026-10-11 — unit- and desktop-verified
+Description: The Dash plays its built-in tones through
+`BTPlayer.startAlarm(path, loop)` → `_sendMediaPlayerCommand("playalarm
+<0|1> <path>")` and `stopAlarm` → `"stopalarm"` (`music/BTPlayer.as:161-173`,
+4.10.3), 5,152, a logging stub until now (issue 19 (c)) — so every tone
+alarm, event tone, tone preview and the default-beep fallback of the
+streaming sources was silent. The paths are
+`/usr/chumby/alarmtones/<name>.raw` and `/usr/chumby/eventtones/<name>.raw`
+(`alarm/Alarm.as:1467`, `event/Event.as:1595`), checked with `_fileExists`
+before playing (`Alarm.as:1495-1498`). Sony's firmware 1.7.1526 ships each
+alarm tone as `.raw` and `.mp3` side by side (chumby-pi issue 14).
+
+Consumers: 5,152 is called only at `BTPlayer.as:167,172`; the classic
+defines it (F2:1568) and never calls it. `.raw` literals exist only in the
+two Dash tone helpers (and `TrackedBTPlayer.as:27`'s type check); the
+classic has none. `AudioPlayer` is used only by the fixture host; the
+backup alarm runs its own mpv.
+
+Fix: `audio::parse_media_command` reads the two verbs; `playalarm` runs on
+a second `AudioPlayer` (`alarm_audio`, socket `/tmp/chumby-mpv-alarm.sock`)
+so a tone neither stops the music player nor shows in
+`_getAudioPlayerState`; flag `1` loops with `--loop=inf` (`LOOP_FOREVER`)
+until `stopalarm`, `0` plays once. Volume and mute reach both players.
+`RootFs::resolve` maps a `.raw` path to its `.mp3`, so `_fileExists` and
+`playalarm` agree; the tree holds tones as MP3 only. Whether btplay mixed
+alarm over music on the device is not known — the separate channel follows
+the panel, which starts a tone alarm without stopping music
+(`Alarm.as:1495-1516`).
+
+Verified: `test_media_command_alarm_channel`,
+`test_dash_raw_tone_is_its_mp3` (62 chumby tests pass); desktop Dash
+(4.10.3, Sony's MP3s in an untracked `fixtures-dash/rootfs/usr/chumby/`):
+a daily beep alarm on `alarm3` fired at 17:57 — `_fileExists(".../alarm3.raw")
+-> 1`, `playalarm 1 .../alarm3.raw`, mpv on `alarm3.mp3` with `--loop=inf`
+and the alarm socket, still playing 8 s later. Classic movie-start check
+passes (exit 124, no panic, `_getPlatform` "ironforge"). Not exercised:
+event tones, the tone preview, `stopalarm` from the alarm screen, and the
+box.

@@ -28,6 +28,7 @@ RECOVER_*.fla
 /fixtures/**/*.swf
 /fixtures-dash/**/*.swf
 /fixtures/**/*.mp3
+/fixtures-dash/**/*.mp3
 /fixtures/**/*.wav
 /fixtures/widgets/*.jpg
 # …except the USB-music test tones: sine waves we generate ourselves

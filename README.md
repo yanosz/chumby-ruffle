@@ -368,7 +368,7 @@ PLAYING 2.
 | 5,149 | `_playAudioAddPlaylist(mimeType, paths…)` | append files to the playlist (`"*"` = autodetect type) | stub |
 | 5,150 | `_playAudioResetPlaylist()` | clear the playlist | stub |
 | 5,151 | `_playAudioNow(path)` | play the given file (the wiki's plain "PlayAudio"; the panel uses 5,144 instead) | stub |
-| 5,152 | `_sendMediaPlayerCommand(cmd)` | raw command string to the player daemon | stub |
+| 5,152 | `_sendMediaPlayerCommand(cmd)` | raw command string to the player daemon | `playalarm <0\|1> <path>` / `stopalarm` (the Dash's alarm tones) on a second mpv beside the music one, `1` looping until stopped; a `.raw` path plays its `.mp3`; other commands logged and ignored |
 | 5,340 | `_pauseMediaPlayer()` | media(video)-player variant of pause | stub |
 | 5,341 | `_resumeMediaPlayer()` | resume | stub |
 | 5,342 | `_stopMediaPlayer()` | stop | stub |

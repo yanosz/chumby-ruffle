@@ -31,15 +31,20 @@ pub struct AudioPlayer {
     cap: f64,
     /// Running mpv process.
     child: Option<Child>,
-    /// IPC socket for live control.
+    /// IPC socket for live control, and where mpv creates it.
     socket: Option<UnixStream>,
+    socket_path: PathBuf,
     /// Current playback state (updated lazily via `poll_state`).
     pub state: AudioState,
     /// Loop count pre-set by `_playAudioLoopCount` (5,146) before `_playAudio`.
+    /// `LOOP_FOREVER` repeats until stopped.
     pub pending_loops: u32,
 }
 
-const SOCKET_PATH: &str = "/tmp/chumby-mpv.sock";
+pub const SOCKET_PATH: &str = "/tmp/chumby-mpv.sock";
+/// The Dash's alarm channel (`playalarm`) runs beside the music player.
+pub const ALARM_SOCKET_PATH: &str = "/tmp/chumby-mpv-alarm.sock";
+pub const LOOP_FOREVER: u32 = u32::MAX;
 
 /// How long `play()` waits for mpv's IPC socket. mpv needs ~150 ms to create
 /// it on a fast desktop — expect more on a Pi or a loaded machine. Only a
@@ -47,7 +52,7 @@ const SOCKET_PATH: &str = "/tmp/chumby-mpv.sock";
 const SOCKET_WAIT: Duration = Duration::from_millis(1000);
 
 impl AudioPlayer {
-    pub fn new(rootfs: PathBuf, cap: f64) -> Self {
+    pub fn new(rootfs: PathBuf, cap: f64, socket_path: &str) -> Self {
         let bin = find_mpv();
         if let Some(ref p) = bin {
             tracing::info!(target: "chumby_audio", "audio backend: {}", p.display());
@@ -61,6 +66,7 @@ impl AudioPlayer {
             cap,
             child: None,
             socket: None,
+            socket_path: PathBuf::from(socket_path),
             state: AudioState::Stopped,
             pending_loops: 1,
         }
@@ -100,9 +106,11 @@ impl AudioPlayer {
             "--no-terminal",
             "--really-quiet",
             &format!("--volume={vol}"),
-            &format!("--input-ipc-server={SOCKET_PATH}"),
+            &format!("--input-ipc-server={}", self.socket_path.display()),
         ]);
-        if loops > 1 {
+        if loops == LOOP_FOREVER {
+            cmd.arg("--loop=inf");
+        } else if loops > 1 {
             cmd.arg(format!("--loop={loops}"));
         }
         // Route to a specific output (e.g. the Pi's USB card) without
@@ -121,7 +129,7 @@ impl AudioPlayer {
                 tracing::info!(target: "chumby_audio",
                     "mpv pid={} url={url:?} vol={vol} loops={loops}", child.id());
                 self.child = Some(child);
-                self.socket = wait_for_socket(Path::new(SOCKET_PATH), SOCKET_WAIT);
+                self.socket = wait_for_socket(&self.socket_path, SOCKET_WAIT);
                 if self.socket.is_none() {
                     tracing::warn!(target: "chumby_audio",
                         "IPC socket not ready — volume control limited to spawn-time setting");
@@ -182,7 +190,7 @@ impl AudioPlayer {
             if exited {
                 self.child = None;
                 self.socket = None;
-                let _ = std::fs::remove_file(SOCKET_PATH);
+                let _ = std::fs::remove_file(&self.socket_path);
                 self.state = AudioState::Stopped;
             }
         }
@@ -198,7 +206,7 @@ impl AudioPlayer {
             let _ = child.wait(); // reap — instant after SIGKILL, else zombie
         }
         self.socket = None;
-        let _ = std::fs::remove_file(SOCKET_PATH);
+        let _ = std::fs::remove_file(&self.socket_path);
         self.state = AudioState::Stopped;
     }
 
@@ -228,7 +236,7 @@ impl AudioPlayer {
             // mpv can take >SOCKET_WAIT to create the socket on a loaded Pi
             // (seen at 13:41 2026-07-06: alarm fade-in muted forever). The
             // panel keeps sending volume updates, so retry the connect here.
-            self.socket = UnixStream::connect(SOCKET_PATH).ok();
+            self.socket = UnixStream::connect(&self.socket_path).ok();
             if self.socket.is_some() {
                 tracing::info!(target: "chumby_audio", "IPC socket connected late");
             }
@@ -246,6 +254,32 @@ impl AudioPlayer {
 impl Drop for AudioPlayer {
     fn drop(&mut self) {
         self.stop_internal();
+    }
+}
+
+/// A `_sendMediaPlayerCommand` (5,152) string — the Dash's alarm channel,
+/// `BTPlayer.startAlarm` / `stopAlarm`.
+#[derive(Debug, PartialEq)]
+pub enum MediaCommand {
+    PlayAlarm { path: String, forever: bool },
+    StopAlarm,
+    Unknown,
+}
+
+/// `playalarm <0|1> <path>` / `stopalarm`. A `.raw` tone is played from
+/// its `.mp3` sibling: Sony's firmware ships both, mpv cannot read the raw.
+pub fn parse_media_command(cmd: &str) -> MediaCommand {
+    let mut parts = cmd.trim().splitn(3, ' ');
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some("playalarm"), Some(flag), Some(path)) if !path.is_empty() => {
+            let path = match path.strip_suffix(".raw") {
+                Some(stem) => format!("{stem}.mp3"),
+                None => path.to_owned(),
+            };
+            MediaCommand::PlayAlarm { path, forever: flag != "0" }
+        }
+        (Some("stopalarm"), None, None) => MediaCommand::StopAlarm,
+        _ => MediaCommand::Unknown,
     }
 }
 
@@ -287,14 +321,32 @@ mod tests {
     /// everywhere the panel reads them back — only mpv sees the scale.
     #[test]
     fn test_volume_cap_scales_panel_space() {
-        let capped = AudioPlayer::new(PathBuf::from("/nonexistent"), 40.0);
+        let capped = AudioPlayer::new(PathBuf::from("/nonexistent"), 40.0, SOCKET_PATH);
         assert_eq!(capped.effective_volume(100.0), 40);
         assert_eq!(capped.effective_volume(50.0), 20);
         assert_eq!(capped.effective_volume(0.0), 0);
         assert_eq!(capped.effective_volume(150.0), 40); // panel space clamps first
 
-        let uncapped = AudioPlayer::new(PathBuf::from("/nonexistent"), 100.0);
+        let uncapped = AudioPlayer::new(PathBuf::from("/nonexistent"), 100.0, SOCKET_PATH);
         assert_eq!(uncapped.effective_volume(60.0), 60);
+    }
+
+    #[test]
+    fn test_media_command_alarm_channel() {
+        assert_eq!(
+            parse_media_command("playalarm 1 /usr/chumby/alarmtones/alarm1.raw"),
+            MediaCommand::PlayAlarm {
+                path: "/usr/chumby/alarmtones/alarm1.mp3".into(),
+                forever: true,
+            }
+        );
+        assert_eq!(
+            parse_media_command("playalarm 0 /mnt/usb/My Tone.mp3"),
+            MediaCommand::PlayAlarm { path: "/mnt/usb/My Tone.mp3".into(), forever: false }
+        );
+        assert_eq!(parse_media_command("stopalarm"), MediaCommand::StopAlarm);
+        assert_eq!(parse_media_command("playalarm 1"), MediaCommand::Unknown);
+        assert_eq!(parse_media_command("seek 10"), MediaCommand::Unknown);
     }
 
     /// Integration test for the mpv audio backend.
@@ -321,7 +373,7 @@ mod tests {
         };
 
         let tone = rootfs.join("usr/chumby/alarmtones/Beep.mp3");
-        let mut player = AudioPlayer::new(rootfs.clone(), 100.0);
+        let mut player = AudioPlayer::new(rootfs.clone(), 100.0, SOCKET_PATH);
 
         if player.bin.is_none() {
             eprintln!("SKIP: mpv not found");

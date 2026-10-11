@@ -33,6 +33,12 @@ Widget SWFs live in `swf-assets/dash/widgets/` (gitignored); `run-dash.sh`
 links them into `rootfs/usr/widgets/`, where the channel fixture's
 `file:////usr/widgets/<name>.swf` hrefs resolve.
 
+Tones: the Dash asks for `/usr/chumby/alarmtones/<name>.raw` and
+`/usr/chumby/eventtones/<name>.raw`; the player serves each from the `.mp3`
+of the same name (fork issue 28). Put MP3s there by hand for a desktop run
+— `alarm1`-`alarm6`, `Birds`, `Wave` and `event1`-`event6`, `Birds`,
+`Wave` — they are copyrighted and gitignored, like the classic's.
+
 Themes offered by the in-panel picker come from `rootfs/psp/themes/`;
 `run-dash.sh` links whatever is in `swf-assets/dash/themes/` there, and the
 catalog the panel fetches is generated from that directory

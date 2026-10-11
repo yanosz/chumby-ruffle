@@ -10,7 +10,7 @@
 //! Fixture keys are the panel's own request strings — a logged unmatched
 //! call names the fixture file to create.
 
-use super::audio::{AudioPlayer, AudioState};
+use super::audio::{self, AudioPlayer, AudioState, MediaCommand};
 use super::backup_alarm::BackupAlarm;
 use super::brightness::{self, Backlight};
 use super::config::{self, PlayerConfig};
@@ -34,6 +34,8 @@ pub struct FixtureHost {
     native_state: Mutex<HashMap<&'static str, HostValue>>,
     /// mpv-backed audio player for alarm tones and URL streams.
     audio: Mutex<AudioPlayer>,
+    /// The Dash's separate alarm channel (5,152 `playalarm`).
+    alarm_audio: Mutex<AudioPlayer>,
     /// Watches /psp/ifalarm and sounds the dead-man tone (chumbalarmd's job).
     backup_alarm: BackupAlarm,
     /// Owner-level knobs from `<fixtures>/player.toml`, read once at start.
@@ -106,7 +108,16 @@ impl FixtureHost {
             platform,
             slave_vars: Mutex::new(HashMap::new()),
             native_state: Mutex::new(initial_state),
-            audio: Mutex::new(AudioPlayer::new(rootfs_path.clone(), config.volume_cap)),
+            audio: Mutex::new(AudioPlayer::new(
+                rootfs_path.clone(),
+                config.volume_cap,
+                audio::SOCKET_PATH,
+            )),
+            alarm_audio: Mutex::new(AudioPlayer::new(
+                rootfs_path.clone(),
+                config.volume_cap,
+                audio::ALARM_SOCKET_PATH,
+            )),
             backup_alarm: BackupAlarm::start(rootfs_path, config.volume_cap),
             config,
             root,
@@ -301,6 +312,27 @@ impl ChumbyHost for FixtureHost {
             // (5,142) / (5,143): btplay daemon lifecycle — not applicable to
             // our mpv model (mpv is spawned per _playAudio).
             "_startAudioPlayer" | "_restartAudioPlayer" => HostValue::Undefined,
+            // (5,152): the Dash's alarm tones (BTPlayer.as:161-173); the
+            // classic never calls it.
+            "_sendMediaPlayerCommand" => {
+                let cmd = match args.first() {
+                    Some(HostValue::String(s)) => s.as_str(),
+                    _ => "",
+                };
+                match audio::parse_media_command(cmd) {
+                    MediaCommand::PlayAlarm { path, forever } => {
+                        let vol = self.current_volume();
+                        let mut player = self.alarm_audio.lock().unwrap();
+                        player.pending_loops = if forever { audio::LOOP_FOREVER } else { 1 };
+                        player.play(&path, vol);
+                    }
+                    MediaCommand::StopAlarm => self.alarm_audio.lock().unwrap().stop(),
+                    MediaCommand::Unknown => {
+                        tracing::warn!(target: "chumby_audio", "media command ignored: {cmd:?}")
+                    }
+                }
+                HostValue::Undefined
+            }
 
             // --- Volume: intercept _setSystemVolume (5,181) and
             //     _setSystemMute (5,185) for live mpv control and
@@ -315,6 +347,7 @@ impl ChumbyHost for FixtureHost {
                     let _ = self.fs.put_file("/psp/volume", vol.to_string().as_bytes());
                     if !self.is_muted() {
                         self.audio.lock().unwrap().set_volume(vol);
+                        self.alarm_audio.lock().unwrap().set_volume(vol);
                     }
                 }
                 HostValue::Undefined
@@ -325,12 +358,9 @@ impl ChumbyHost for FixtureHost {
                         .lock()
                         .unwrap()
                         .insert("SystemMute", HostValue::Number(*mute));
-                    if *mute != 0.0 {
-                        self.audio.lock().unwrap().set_volume(0.0);
-                    } else {
-                        let vol = self.current_volume();
-                        self.audio.lock().unwrap().set_volume(vol);
-                    }
+                    let vol = if *mute != 0.0 { 0.0 } else { self.current_volume() };
+                    self.audio.lock().unwrap().set_volume(vol);
+                    self.alarm_audio.lock().unwrap().set_volume(vol);
                 }
                 HostValue::Undefined
             }
@@ -674,6 +704,11 @@ impl RootFs {
         }
         let mut p = self.root.clone();
         p.extend(&clean);
+        // The Dash's tones are named `.raw` (Alarm.as:1467, Event.as:1595);
+        // the tree keeps them as `.mp3`, which is what playalarm plays.
+        if p.extension().is_some_and(|e| e == "raw") {
+            p.set_extension("mp3");
+        }
         Some(p)
     }
 
@@ -817,6 +852,22 @@ mod tests {
         assert_eq!(fs.dir_entry("/mnt/usb", 4), DirEntryResult::End);
         assert_eq!(fs.dir_entry("/mnt/nosuch", 0), DirEntryResult::InvalidPath);
         assert_eq!(fs.dir_entry("/mnt/usb/a.mp3", 0), DirEntryResult::InvalidPath);
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn test_dash_raw_tone_is_its_mp3() {
+        let root = std::env::temp_dir()
+            .join(format!("chumby-fixture-rawtone-test-{}", std::process::id()));
+        let tones = root.join("usr/chumby/alarmtones");
+        std::fs::create_dir_all(&tones).unwrap();
+        std::fs::write(tones.join("alarm3.mp3"), b"x").unwrap();
+
+        let fs = RootFs { root: root.clone(), backlight: None, hide_local_profile: false };
+        assert!(fs.file_exists("/usr/chumby/alarmtones/alarm3.raw"));
+        assert!(!fs.file_exists("/usr/chumby/alarmtones/alarm4.raw"));
+        assert!(fs.file_exists("/usr/chumby/alarmtones/alarm3.mp3"));
 
         std::fs::remove_dir_all(&root).ok();
     }
