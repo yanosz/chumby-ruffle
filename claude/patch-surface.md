@@ -9,7 +9,8 @@ Why it matters: `chumby` is two commits on upstream master — additions
 first, edits second — so this list *is* the conflict surface of every
 rebase. The first commit cannot conflict; this one is the whole cost.
 
-Measured 2026-08-07 against `upstream/master` (`8328af42d`): **18
+Measured 2026-08-07, re-checked 2026-10-20, against `upstream/master`
+(`8328af42d`): **18
 modified, 1 deleted.**
 
 ## Registration hooks — the intended shape

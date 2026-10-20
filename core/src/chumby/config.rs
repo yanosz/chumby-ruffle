@@ -105,8 +105,8 @@ pub fn load(path: &Path) -> PlayerConfig {
         config.brightness_ctl.as_deref().unwrap_or(Path::new("<none>")).display());
     if config.access_chumby_com {
         tracing::warn!(target: "chumby_host",
-            "access_chumby_com=1: music proxies pass through to chumby.com \
-             (music_sources.rs); remote channels/registration stay unimplemented");
+            "access_chumby_com=1: the music proxies and, with a stable identity, \
+             registration and the account's channels reach chumby.com (fixture.rs)");
     }
     config
 }

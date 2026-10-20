@@ -5012,13 +5012,10 @@ dependencies = [
 name = "ruffle_render_tiny_skia"
 version = "0.3.0"
 dependencies = [
- "bytemuck",
  "log",
  "ruffle_render",
- "softbuffer",
  "swf 0.2.2",
  "tiny-skia",
- "winit",
 ]
 
 [[package]]

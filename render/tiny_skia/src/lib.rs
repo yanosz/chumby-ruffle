@@ -1,10 +1,9 @@
-//! CPU-only `tiny-skia` render backend — a spike to test whether a direct 2D
-//! rasterizer beats wgpu-on-lavapipe on CPU load (see
-//! `ruffle/claude/tiny-skia-render-backend-plan.md`).
+//! CPU-only `tiny-skia` render backend: the appliance's default rasterizer,
+//! chosen because a direct 2D rasterizer beats wgpu-on-lavapipe on CPU load
+//! by an order of magnitude (`claude/tiny-skia-backend-plan.md`).
 //!
-//! Non-goals, all stubbed unsupported: masks, blend-mode compositing, filters,
-//! offscreen bitmap caching, PixelBender, Context3D. Bitmap *fills* render flat
-//! for now; photographic content still goes through `render_bitmap`.
+//! Non-goals, all stubbed unsupported: alpha masks, blend-mode compositing,
+//! filters, offscreen bitmap caching, PixelBender, Context3D.
 
 #![allow(clippy::arc_with_non_send_sync)]
 
@@ -47,7 +46,7 @@ const TWIPS_TO_PIXELS: f32 = 0.05;
 const GRADIENT_HALF: f32 = 16384.0;
 
 #[derive(Default, Debug)]
-pub struct SpikeStats {
+pub struct FrameStats {
     pub shapes: u32,
     pub bitmaps: u32,
     pub rects: u32,
@@ -60,7 +59,7 @@ pub struct SpikeStats {
 }
 
 pub struct TinySkiaRenderBackend {
-    pub stats: SpikeStats,
+    pub stats: FrameStats,
     frame: Pixmap,
     masks: MaskStack,
     dimensions: ViewportDimensions,
@@ -70,7 +69,7 @@ impl TinySkiaRenderBackend {
     pub fn new(width: u32, height: u32) -> Self {
         let frame = new_pixmap(width, height);
         Self {
-            stats: SpikeStats::default(),
+            stats: FrameStats::default(),
             frame,
             masks: MaskStack::default(),
             dimensions: ViewportDimensions {
@@ -583,7 +582,7 @@ impl RenderBackend for TinySkiaRenderBackend {
     ) {
         self.frame.fill(sk_color(&clear));
         self.masks.reset();
-        self.stats = SpikeStats::default();
+        self.stats = FrameStats::default();
         commands.execute(self);
         if std::env::var_os("CHUMBY_TS_STATS").is_some() {
             log::warn!("tiny-skia frame stats: {:?}", self.stats);
@@ -646,7 +645,7 @@ impl RenderBackend for TinySkiaRenderBackend {
     }
 
     fn debug_info(&self) -> Cow<'static, str> {
-        Cow::Borrowed("Renderer: tiny-skia (spike)")
+        Cow::Borrowed("Renderer: tiny-skia")
     }
 
     fn name(&self) -> &'static str {
@@ -824,7 +823,7 @@ impl CommandHandler for TinySkiaRenderBackend {
 
     fn render_alpha_mask(&mut self, maskee_commands: CommandList, _mask_commands: CommandList) {
         self.stats.alpha_masks += 1;
-        // Spike: no clipping — draw the maskee unclipped.
+        // Unsupported (non-goal): the maskee is drawn unclipped.
         maskee_commands.execute(self);
     }
 
@@ -910,7 +909,7 @@ impl CommandHandler for TinySkiaRenderBackend {
 
     fn blend(&mut self, commands: CommandList, _blend_mode: RenderBlendMode) {
         self.stats.blends += 1;
-        // Spike: blend modes unsupported — draw the inner commands normally.
+        // Unsupported (non-goal): the inner commands draw normally.
         commands.execute(self);
     }
 }

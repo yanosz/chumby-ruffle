@@ -40,16 +40,25 @@ All chumby code lives in `core/src/chumby/`:
 | `host.rs` | the `ChumbyHost` trait — the boundary between the panel and its environment |
 | `fixture.rs` | the fixtures-backed host and its virtual filesystem |
 | `real_net.rs` | overlays the network calls with live kernel state |
+| `real_ident.rs` | the device GUID and serial, derived from the machine |
+| `config.rs` | the owner's `player.toml`: volume and brightness caps, chumby.com access |
 | `avm.rs` | the vendor-function table |
 | `navigator.rs` | intercepts the panel's `exec://` and chumby.com requests |
 | `audio.rs` | plays audio through mpv |
+| `backup_alarm.rs` | the dead-man beep the chumby's `chumbalarmd` sounded when the panel missed an alarm |
 | `brightness.rs` | drives a real backlight (kernel sysfs, or an owner-configured executable) |
 | `input.rs` | feeds simulated bend-sensor and pointer input |
+| `restart.rs` | quits when idle on the appliance supervisor's request |
 | `ui_policy.rs` | dims and disables panel controls the host platform can't support |
+| `music_sources.rs` | hides music sources the appliance cannot serve |
+| `intro.rs` | makes the INTRO button play the tour under localCache |
+| `empty_channel.rs` | an empty widget channel shows the panel's built-in clock |
+| `alarm_guard.rs` | a silent alarm no longer cancels a sounding one |
 
 Everything else is a handful of small registration hooks in upstream
-files (grep for `chumby`). `claude-docs/design.md` §8 lists them and is
-the guide for rebasing onto new upstream releases.
+files (grep for `chumby`), plus the CPU rasterizer in `render/tiny_skia/`.
+`claude/patch-surface.md` lists the hooks and is the guide for rebasing
+onto new upstream releases.
 
 For the engineering record behind this fork — what the panel demands of a
 player, why the host boundary looks the way it does, and how to build,

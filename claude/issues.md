@@ -103,8 +103,7 @@ chumby-player` shows nothing at all from the player.
 Number: 3
 Timestamp: 2026-08-20, 22:10
 Title: The built-in clock renders without digits.
-Status: cause found, fixed in the appliance build (chumby-pi issue 6);
-awaiting a rebuilt deb on the box. Full record: claude/clock-digits-plan.md
+Status: closed 2026-10-20 (housekeeping, Jan) — was: cause found, fixed in the appliance build (chumby-pi issue 6); awaiting a rebuilt deb on the box. Full record: claude/clock-digits-plan.md
 Description: With no widgets installed the panel falls back to its own
 built-in clock (FR17, the empty-channel -> bi_clock path from #26). On the
 new box — Pi 3B+, Waveshare 5" DSI panel at 1024x600, chumby-player 0.9.3,
@@ -341,7 +340,7 @@ DSI box's sink at 100 % after Jan found the output weak).
 Number: 7
 Timestamp: 2026-08-26, 17:00
 Title: No network was reported as a fabricated Ethernet page.
-Status: fixed on dev 2026-08-26 — device verification outstanding (Jan)
+Status: closed 2026-10-20 (housekeeping, Jan) — was: fixed on dev 2026-08-26 — device verification outstanding (Jan)
 Description: With no default route every reader in `real_net.rs` returned
 `None` and the call fell through to `fixtures/exec/`, which answered
 `type="lan" ip="192.168.1.50" gateway="192.168.1.1"`, MAC
@@ -479,8 +478,7 @@ that is a separate call and nothing is known to be broken by it.
 Number: 10
 Timestamp: 2026-09-01, 11:00
 Title: A silent alarm cancelled a sounding one — deliberate deviation from stock.
-Status: fixed on dev 2026-09-01, A/B-verified on the desktop; device
-verification outstanding (chumby-pi issue 13).
+Status: closed 2026-10-20 (housekeeping, Jan) — was: fixed on dev 2026-09-01, A/B-verified on the desktop; device verification outstanding (chumby-pi issue 13).
 Description: `Alarm.ringAlarm` (F2:11178) opens with
 `_alarmSet.stopAlarmsExcept(this)`, and `stopAlarmsExcept` (F2:12039) calls
 `stopAlarm(true)` on every *other* ringing alarm. An alarm with `type="none"`
@@ -595,7 +593,7 @@ no longer gates step 5; issue 20 is fixed in this run, before the deploy.
 Number: 23
 Timestamp: 2026-09-10, 20:40
 Title: The backlight scale wastes its whole range above 25 %.
-Status: fixed in the player — the value itself wants a look on the box
+Status: closed 2026-10-20 (housekeeping, Jan) — was: fixed in the player — the value itself wants a look on the box
 Description: On the 5" DSI panel (`10-0045`, `max_brightness` 255) Jan runs
 day brightness at 7.2 and night/dim at 1.5 out of the panel's 0-100, i.e. duty
 18 and 4 — the useful range is the bottom 2 % of the scale, and that is also
@@ -631,7 +629,7 @@ the sliders.
 Number: 24
 Timestamp: 2026-09-10, 22:05
 Title: The volume ceiling is too high, and the master is not the only fader.
-Status: fixed by config — the 50 % value is Jan's to judge on the box
+Status: closed 2026-10-20 (housekeeping, Jan) — was: fixed by config — the 50 % value is Jan's to judge on the box
 Description: Jan's rule for the appliance: every stage at unity, the panel's
 slider the single master, capped at half. `volume_cap` (FR14, config.rs) is
 already that scale — `audio.rs:69-74` `effective_volume` = panel × cap / 100,
@@ -665,7 +663,7 @@ scale and alarms are not quieter than the master.
 Number: 25
 Timestamp: 2026-09-24, 10:30
 Title: A forward step of the wall clock leaves every enabled alarm dead until restart.
-Status: remedied outside the player — the appliance supervisor restarts the panel on a clock step > 15 s (chumby-pi `claude/watchdog-plan.md`); the player's part is issue 27
+Status: closed 2026-10-20 (housekeeping, Jan) — was: remedied outside the player — the appliance supervisor restarts the panel on a clock step > 15 s (chumby-pi `claude/watchdog-plan.md`); the player's part is issue 27
 Description: Measured on chumby-pi-3 — the appliance record is chumby-pi
 issue 21. The player started with the clock 5 d 15 h slow (no RTC; NTP stepped
 it later), and both enabled daily alarms have logged
@@ -693,7 +691,7 @@ every enabled alarm. Consumer list for `_alarmTime`, `startAlarm` and
 Number: 26
 Timestamp: 2026-09-24, 10:50
 Title: The panel's WLAN display cannot tell a usable link from a loud one.
-Status: display unchanged; mitigated by the appliance — NetworkManager's connectivity check plus a panel restart when connectivity returns, which refreshes the boot-time snapshot (chumby-pi `claude/watchdog-plan.md`)
+Status: closed 2026-10-20 (housekeeping, Jan) — was: display unchanged; mitigated by the appliance — NetworkManager's connectivity check plus a panel restart when connectivity returns, which refreshes the boot-time snapshot (chumby-pi `claude/watchdog-plan.md`)
 Description: Player side of chumby-pi issue 22 (WLAN shown as good, not
 usable; no log survived). How each field is produced:
 
@@ -723,7 +721,7 @@ usable; no log survived). How each field is produced:
 Number: 27
 Timestamp: 2026-09-24, 14:30
 Title: restart-when-idle — the player yields to the appliance supervisor.
-Status: built and desktop-verified; the supervisor that sends it is chumby-pi work (watchdog plan, step 3c)
+Status: closed 2026-10-20 (housekeeping, Jan) — was: built and desktop-verified; the supervisor that sends it is chumby-pi work (watchdog plan, step 3c)
 Description: The appliance's new supervisor (chumby-pi
 `claude/watchdog-plan.md`, D4) restarts the panel on a clock step or when
 connectivity returns, but must not while an audio alarm rings or snoozes,
@@ -759,3 +757,42 @@ Desktop runs (release build, tiny-skia, scratch fixtures, 2026-09-24):
   exit 0.
 Not run separately: a ringing `type="none"` alarm — it auto-dismisses
 inside `ringAlarm`, and the `_type` test excludes it.
+
+---
+
+Number: 30
+Timestamp: 2026-10-20, 20:30
+Title: Housekeeping — the fork half of chumby-pi issue 25.
+Status: done
+Description: Jan's housekeeping pass (chumby-pi `claude/issues.md` #25)
+reached the fork on 2026-10-20, artifacts and code, decided in interview:
+- `CLAUDE.md.old` deleted (the old rule set: PRs, a cargo feature).
+- `render/tiny_skia/examples/{demo,present_probe}.rs` and their
+  dev-dependencies deleted: spike-era probes, superseded by the shipped
+  present path in `desktop/src/gui/controller.rs`. `tiny_skia_export` stays
+  as the offscreen A/B renderer (compare both renderers before a verdict).
+- `chumby.yml` runs on a push to `chumby` and on dispatch only; no pull
+  requests exist, the trigger and its guards were dead.
+- `audio.rs`: mpv is found by a PATH walk, not by shelling out to `which`
+  (Rust over shell); the mpv integration test is `#[ignore]` (it plays a
+  tone) and looks for the fixtures at `<fork>/fixtures`, not three levels
+  up a layout that no longer exists — it had always skipped.
+- `config.rs`: the access_chumby_com warning no longer claims registration
+  is unimplemented.
+- `mod.rs` and README list every module; both point rebasers at
+  `claude/patch-surface.md` (re-checked today, unchanged) instead of the
+  frozen design §8. The tiny-skia crate no longer calls itself a spike;
+  `SpikeStats` is `FrameStats`.
+- Branches: `chumby-regen`, `chumby-regen-095`, `chumby-regen-2026-09-29`,
+  `regress/upstream-0706` deleted locally, `sony-dash-before-rebase-20261010`
+  locally and on origin. `chumby-before-regen-*` and `chumby-old` stay:
+  chumby-pi's release history pins fork commits that live only there.
+  `sony-dash` stays as a reference (issue 22 / chumby-pi 18: stale).
+- Issues 3, 7, 10, 23-27 closed (Jan); 1, 2, 4, 5, 6, 8 stay open.
+- clippy: clean for `core/src/chumby/` and `render/tiny_skia/`.
+Not done, by choice: folding the prototype-surgery boilerplate shared by
+intro.rs, empty_channel.rs and alarm_guard.rs into a helper — readable as
+is, and the wrapped behaviours are hard to re-verify on the desktop.
+Verification: `cargo test -p ruffle_core --lib chumby`,
+`cargo test -p ruffle_render_tiny_skia`, debug build, movie start on the
+desktop (the CI check: alive at 45 s, `_getPlatform` in the log, no panic).

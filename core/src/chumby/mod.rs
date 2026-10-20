@@ -2,27 +2,33 @@
 //!
 //! Everything chumby-specific lives in this module, always compiled in
 //! this fork. Upstream Ruffle files receive only minimal registration
-//! hooks; the README lists them, and `claude-docs/design.md` §8 tracks them
-//! against upstream drift.
+//! hooks, each marked with the word `chumby`; `claude/patch-surface.md`
+//! tracks them against upstream drift.
 //!
-//! Submodules:
+//! The host boundary:
 //! - `host`: the `ChumbyHost` trait (native / exec / fetch / fs categories)
 //! - `fixture`: `FixtureHost`, answering from a fixtures directory
+//! - `real_net`: wraps it, answering the network touchpoints from live
+//!   kernel state; `real_ident`: device GUID and serial from the machine
 //! - `config`: owner-level knobs from `<fixtures>/player.toml`, read once
-//!   at start (volume cap, the future chumby.com switch)
 //! - `avm`: the `ASnative(5, N)` function table (per-index docs: README)
 //! - `navigator`: `NavigatorBackend` decorator intercepting `exec://` and
 //!   chumby HTTP endpoints
+//!
+//! Device behaviour behind it:
 //! - `audio`: mpv-backed player behind the audio native family
 //! - `backup_alarm`: the dead-man beep chumbalarmd provided on real hardware
 //! - `brightness`: real backlight behind the panel's brightness writes
-//!   (kernel backlight sysfs, or the owner's `brightness_ctl` executable)
 //! - `input`: simulated-input control channel (stdin + FIFO line commands)
 //! - `restart`: restart-when-idle requests from the appliance supervisor
-//! - `music_sources`: VM-level removal of music sources the appliance
-//!   cannot serve from `MusicPlayer.musicSources`
-//! - `ui_policy`: declarative dim/disable of panel controls the host
-//!   platform does not support (rules compiled in from `ui-policy.toml`)
+//!
+//! Surgery on the panel's own AVM1 objects, applied from `avm::method`:
+//! - `ui_policy`: dim/disable controls the host cannot honour
+//!   (rules compiled in from `ui-policy.toml`)
+//! - `music_sources`: hide music sources the appliance cannot serve
+//! - `intro`: the INTRO button under localCache
+//! - `empty_channel`: an empty channel shows the built-in clock
+//! - `alarm_guard`: a silent alarm must not cancel a sounding one
 
 pub mod alarm_guard;
 pub mod audio;

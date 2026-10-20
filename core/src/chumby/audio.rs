@@ -249,16 +249,14 @@ impl Drop for AudioPlayer {
     }
 }
 
+/// The first executable `mpv` on PATH.
 fn find_mpv() -> Option<PathBuf> {
-    if let Ok(out) = Command::new("which").arg("mpv").output() {
-        if out.status.success() {
-            let path = String::from_utf8_lossy(&out.stdout).trim().to_owned();
-            if !path.is_empty() {
-                return Some(PathBuf::from(path));
-            }
-        }
-    }
-    None
+    use std::os::unix::fs::PermissionsExt;
+    std::env::split_paths(&std::env::var_os("PATH")?)
+        .map(|dir| dir.join("mpv"))
+        .find(|p| {
+            std::fs::metadata(p).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+        })
 }
 
 /// Spin-wait for the IPC socket to appear, then connect.
@@ -297,26 +295,20 @@ mod tests {
         assert_eq!(uncapped.effective_volume(60.0), 60);
     }
 
-    /// Integration test for the mpv audio backend.
-    ///
-    /// Requires mpv to be installed and the chumby alarm-tone fixtures to exist.
-    /// Run with:
-    ///   CHUMBY_FIXTURES=/path/to/chumby-pi/fixtures \
-    ///   cargo test -p ruffle_core chumby::audio::tests \
-    ///   -- --nocapture
-    ///
-    /// Skips gracefully if mpv is absent or fixtures are missing.
+    /// Integration test for the mpv audio backend: spawns mpv and plays a
+    /// tone audibly, so ignored by default. Needs mpv and an owner-copied
+    /// Beep.mp3 under `fixtures/rootfs/usr/chumby/alarmtones/` (gitignored),
+    /// or `CHUMBY_FIXTURES` pointing at a tree that has one:
+    ///   cargo test -p ruffle_core chumby::audio -- --ignored --nocapture
     #[test]
+    #[ignore]
     fn test_mpv_play_volume_pause_stop() {
-        // Locate the fixture rootfs from the env var or a sibling-repo heuristic.
         let rootfs = if let Ok(f) = std::env::var("CHUMBY_FIXTURES") {
             PathBuf::from(f).join("rootfs")
         } else {
-            // CARGO_MANIFEST_DIR is <chumby-pi>/resources/ruffle/core.
+            // CARGO_MANIFEST_DIR is <fork>/core.
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .parent().unwrap()   // resources/ruffle/
-                .parent().unwrap()   // resources/
-                .parent().unwrap()   // chumby-pi/
+                .parent().unwrap()
                 .join("fixtures/rootfs")
         };
 

@@ -86,7 +86,8 @@ and a decision between A and B.
 
 #### Step 1 results (2026-07-26, DONE)
 
-Probe: `render/tiny_skia/examples/present_probe.rs` — winit + softbuffer, no
+Probe: `render/tiny_skia/examples/present_probe.rs` (removed 2026-10-20 with
+`examples/demo.rs`, housekeeping; the shipped path is `controller.rs`) — winit + softbuffer, no
 Vulkan anywhere. Modes `direct` (paint at window size, copy out), `upscale`
 (paint at the 320×240 stage, scale up via `draw_pixmap`), `zerocopy` (paint
 straight into the `wl_shm` buffer; R/B swapped, so a cost probe only, not a
