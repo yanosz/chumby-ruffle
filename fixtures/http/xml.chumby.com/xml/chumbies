@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<chumby id="CHUMBYPI-0000-0000-0000-000000000001">
+  <name>chumbypi</name>
+  <profile href="/xml/profiles" name="chumbypi-channel" id="1"/>
+  <user username="jan"/>
+</chumby>
