@@ -18,6 +18,7 @@ members = [
 
     "render",
     "render/canvas",
+    "render/tiny_skia",
     "render/naga-agal",
     "render/pixel_bender",
     "render/pixel_bender/assembly_tests",

@@ -28,6 +28,11 @@ pub fn handle<'gc>(
     let command = command.to_utf8_lossy();
     let args = args.to_utf8_lossy();
 
+    // chumby: the in-panel intro's quit must not exit the player (intro.rs).
+    if crate::chumby::intro::swallow_fscommand_quit(&command, activation) {
+        return Ok(());
+    }
+
     if !activation
         .context
         .external_interface

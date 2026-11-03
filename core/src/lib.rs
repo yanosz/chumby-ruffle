@@ -17,6 +17,7 @@ mod avm1;
 mod avm2;
 mod avm_rng;
 mod binary_data;
+pub mod chumby;
 pub mod bitmap;
 mod character;
 pub mod context;

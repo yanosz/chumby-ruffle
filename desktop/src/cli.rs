@@ -139,6 +139,25 @@ pub struct Opt {
     #[clap(long, default_value_os_t=get_default_cache_directory())]
     pub cache_directory: std::path::PathBuf,
 
+    /// Chumby fixtures directory (chumby-pi project). Enables the
+    /// chumby host environment, answering ASnative/exec/HTTP/file requests
+    /// from this directory.
+    #[clap(long)]
+    pub chumby_fixtures: Option<std::path::PathBuf>,
+
+    /// FIFO for simulated chumby inputs. Line commands, e.g.
+    /// `echo bend > PATH` presses+releases the bend sensor. Ruffle's
+    /// stdin accepts the same commands regardless.
+    #[clap(long)]
+    pub chumby_control: Option<std::path::PathBuf>,
+
+    /// Render backend. `wgpu` draws through a graphics API (on the chumby's
+    /// hardware that means software Vulkan) and carries the egui GUI;
+    /// `tiny-skia` rasterises on the CPU and presents through shared
+    /// memory, with no Vulkan and no GUI overlay.
+    #[clap(long, default_value = "wgpu")]
+    pub renderer: RendererChoice,
+
     /// Proxy to use when loading movies via URL.
     #[clap(long)]
     pub proxy: Option<Url>,
@@ -165,6 +184,12 @@ pub struct Opt {
     /// Specify how Ruffle should handle areas outside the movie stage.
     #[clap(long)]
     pub letterbox: Option<Letterbox>,
+
+    /// Stage background colour as RRGGBB (`#` optional), overriding the
+    /// movie's own; with `--letterbox off` it also fills the margins
+    /// (chumby-pi: black beside the panel's grey stage).
+    #[clap(long, value_parser(parse_color))]
+    pub background_color: Option<ruffle_core::Color>,
 
     /// Spoofs the root SWF URL provided to ActionScript.
     #[clap(long, value_parser)]
@@ -253,6 +278,16 @@ fn parse_duration_seconds(value: &str) -> Result<Duration, Error> {
     Ok(Duration::from_secs_f64(value.parse()?))
 }
 
+// chumby: the web player's `backgroundColor` syntax, minus its silent
+// zero for a bad digit.
+fn parse_color(value: &str) -> Result<ruffle_core::Color, Error> {
+    let hex = value.strip_prefix('#').unwrap_or(value);
+    if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(anyhow!("expected RRGGBB, got `{value}`"));
+    }
+    Ok(ruffle_core::Color::from_rgb(u32::from_str_radix(hex, 16)?, 255))
+}
+
 fn parse_align(value: &str) -> Result<StageAlign, Error> {
     value
         .parse()
@@ -306,6 +341,15 @@ impl Opt {
             }
         })
     }
+}
+
+/// Which `RenderBackend` the player builds, and therefore how frames reach
+/// the screen. An unknown value is a clap error, not a fallback.
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, clap::ValueEnum)]
+pub enum RendererChoice {
+    #[default]
+    Wgpu,
+    TinySkia,
 }
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, clap::ValueEnum)]
