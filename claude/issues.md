@@ -478,7 +478,7 @@ that is a separate call and nothing is known to be broken by it.
 Number: 10
 Timestamp: 2026-09-01, 11:00
 Title: A silent alarm cancelled a sounding one — deliberate deviation from stock.
-Status: won't fix 2026-11-03 (Jan) — the guard is removed, stock behaviour kept: "this exists on the chumby, too. We do not need to deviate"; and Jan: "the guard didn't work". Was: closed 2026-10-20 (housekeeping) — fixed on dev 2026-09-01, A/B-verified on the desktop, device-verified 2026-09-24 (chumby-pi issue 13).
+Status: won't fix 2026-11-03 (Jan) — the guard is removed, stock behaviour kept: "this exists on the chumby, too. We do not need to deviate"; and Jan: "the guard didn't work"; the removal ships in 0.9.10. Was: closed 2026-10-20 (housekeeping) — fixed on dev 2026-09-01, A/B-verified on the desktop, device-verified 2026-09-24 (chumby-pi issue 13).
 Description: `Alarm.ringAlarm` (F2:11178) opens with
 `_alarmSet.stopAlarmsExcept(this)`, and `stopAlarmsExcept` (F2:12039) calls
 `stopAlarm(true)` on every *other* ringing alarm. An alarm with `type="none"`
@@ -812,7 +812,7 @@ desktop (the CI check: alive at 45 s, `_getPlatform` in the log, no panic).
 Number: 31
 Timestamp: 2026-11-03, 14:00
 Title: Soft events, a lossless control FIFO, stream reconnect, and a forced stage colour — the player half of chumby-pi issues 27 and 30.
-Status: done on dev, desktop-verified 2026-11-03, verified on chumby-pi-3 (chumby-pi issues 27, 30); ships in 0.9.9
+Status: done on dev, desktop-verified 2026-11-03, verified on chumby-pi-3 (chumby-pi issues 27, 30); shipped in 0.9.9 (released 2026-11-03)
 Description: chumby-rust-remote steers the hardware chumby's panel with soft
 events (`signal_soft_event.sh`: `<event type= value= comment=/>` appended to
 `/tmp/flashplayer.event`, SIGHUP to the player, the panel's
