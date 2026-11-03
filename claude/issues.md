@@ -802,7 +802,7 @@ desktop (the CI check: alive at 45 s, `_getPlatform` in the log, no panic).
 Number: 31
 Timestamp: 2026-11-03, 14:00
 Title: Soft events, a lossless control FIFO, stream reconnect, and a forced stage colour — the player half of chumby-pi issues 27 and 30.
-Status: done on dev, desktop-verified 2026-11-03; the Pi side (chumby-rust-remote writing the FIFO, the launcher's `--letterbox off --background-color 000000`) is chumby-pi work
+Status: done on dev, desktop-verified 2026-11-03, verified on chumby-pi-3 (chumby-pi issues 27, 30); ships in 0.9.9
 Description: chumby-rust-remote steers the hardware chumby's panel with soft
 events (`signal_soft_event.sh`: `<event type= value= comment=/>` appended to
 `/tmp/flashplayer.event`, SIGHUP to the player, the panel's
@@ -877,3 +877,10 @@ aarch64-unknown-linux-gnu -p ruffle_desktop` clean. Not run: clippy and
 rustfmt (not installed for this toolchain); anything on the Pi.
 Seen, not investigated: after `setWidget` the control panel's widget
 counter read "11 of 2".
+Update 2026-11-03 (release 0.9.9, Jan): ships as is — no clippy pass, the
+"11 of 2" counter stays seen, not investigated. In chumby-pi the launcher
+passes `--letterbox off --background-color 000000` and the socket allows
+only with the stick hook on (`CHUMBY_USB_HOOK=1`). Before the pair
+regeneration: `cargo test -p ruffle_core --lib chumby` 50 passed, 1 ignored;
+movie start (debug, CI's command line, headless cage, scratch fixtures):
+exit 124, `_getPlatform` 1, `panicked` 0.
