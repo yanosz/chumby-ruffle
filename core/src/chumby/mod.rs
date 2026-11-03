@@ -28,11 +28,9 @@
 //! - `music_sources`: hide music sources the appliance cannot serve
 //! - `intro`: the INTRO button under localCache
 //! - `empty_channel`: an empty channel shows the built-in clock
-//! - `alarm_guard`: a silent alarm must not cancel a sounding one
 //! - `extended_events`: the soft events (`ExtendedEvents`) the chumby's
 //!   player raised, fed from the control channel
 
-pub mod alarm_guard;
 pub mod audio;
 pub mod avm;
 pub mod backup_alarm;

@@ -478,7 +478,7 @@ that is a separate call and nothing is known to be broken by it.
 Number: 10
 Timestamp: 2026-09-01, 11:00
 Title: A silent alarm cancelled a sounding one — deliberate deviation from stock.
-Status: closed 2026-10-20 (housekeeping, Jan) — was: fixed on dev 2026-09-01, A/B-verified on the desktop; device verification outstanding (chumby-pi issue 13).
+Status: won't fix 2026-11-03 (Jan) — the guard is removed, stock behaviour kept: "this exists on the chumby, too. We do not need to deviate"; and Jan: "the guard didn't work". Was: closed 2026-10-20 (housekeeping) — fixed on dev 2026-09-01, A/B-verified on the desktop, device-verified 2026-09-24 (chumby-pi issue 13).
 Description: `Alarm.ringAlarm` (F2:11178) opens with
 `_alarmSet.stopAlarmsExcept(this)`, and `stopAlarmsExcept` (F2:12039) calls
 `stopAlarm(true)` on every *other* ringing alarm. An alarm with `type="none"`
@@ -557,6 +557,16 @@ rang — not cancelling ringing alarms`, no `stopAlarmsExcept(): cancelling`,
 the stream played on to the audio alarm's own end; full trace in chumby-pi
 `claude/issues.md` #13. Also noted there: the TYPE_NONE branch's
 unbalanced `_alarmRefCount` decrement, stock and inert (never read).
+
+2026-11-03 (Jan): won't fix — a silent night-mode alarm cancelling a
+sounding one is the chumby's own behaviour, so the fork keeps it; and in
+use the guard did not do its job (Jan's observation, no trace taken).
+Removed on dev: `core/src/chumby/alarm_guard.rs`, its `pub mod` and the
+doc line in `mod.rs`, the `apply` call in `avm.rs`, the README table row.
+`patch-surface.md` was never touched by the guard, so it stays as it is;
+the mentions in issues 22 and 30 and in chumby-pi's `watchdog-plan.md`
+are history. The configuration-only workaround — keep the nightmode alarm
+out of a wake alarm's ring window — is what remains, as on a chumby.
 ---
 
 Number: 22

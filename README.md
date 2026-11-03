@@ -54,7 +54,6 @@ All chumby code lives in `core/src/chumby/`:
 | `music_sources.rs` | hides music sources the appliance cannot serve |
 | `intro.rs` | makes the INTRO button play the tour under localCache |
 | `empty_channel.rs` | an empty widget channel shows the panel's built-in clock |
-| `alarm_guard.rs` | a silent alarm no longer cancels a sounding one |
 
 Everything else is a handful of small registration hooks in upstream
 files (grep for `chumby`), plus the CPU rasterizer in `render/tiny_skia/`.
