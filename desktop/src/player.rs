@@ -324,6 +324,8 @@ impl ActivePlayer {
         // Chumby host environment: wrap the navigator so exec:// and
         // chumby.com URLs are answered by fixtures.
         let navigator = ruffle_core::chumby::navigator::ChumbyNavigator::new(navigator);
+        // chumby: --background-color, read before `preferences` moves.
+        let background_color = preferences.cli.background_color;
 
         builder = builder
             .with_navigator(navigator)
@@ -375,6 +377,11 @@ impl ActivePlayer {
 
         {
             let mut player_lock = player.lock().expect("Player lock must be available");
+            // chumby: set before the root movie loads; a SetBackgroundColor
+            // tag only applies while the stage has none (movie_clip.rs).
+            if background_color.is_some() {
+                player_lock.set_background_color(background_color);
+            }
             CALLSTACK.with(|callstack| {
                 *callstack.borrow_mut() = Some(player_lock.callstack());
             });

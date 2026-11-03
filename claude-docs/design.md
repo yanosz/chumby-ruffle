@@ -449,6 +449,15 @@ remembering:
   so alarms rang silently at fade-in volume 0. `send_ipc` reconnects lazily.
 - Killing mpv without reaping it leaves zombies.
 
+http(s) URLs get ffmpeg's reconnect options (`--stream-lavf-o=reconnect=1,
+reconnect_streamed=1,reconnect_delay_max=10`, 2026-11-03): a dropped
+connection is re-opened within a second instead of ending the stream (mpv
+exiting, the panel seeing IDLE); a stalled one reconnects once mpv's 60 s
+`--network-timeout` fires; a server that stays away ends the stream after
+~15 s of backoff. The price: a close-delimited response (no Content-Length,
+not chunked — Icecast's shape) cannot tell its end from a drop, so a finite
+file served that way repeats. Local files are not affected.
+
 Where mpv is absent the backend logs "audio will be a silent stub" and
 continues.
 
@@ -495,6 +504,21 @@ The control FIFO drains at the top of `about_to_wait`, one action per loop
 iteration, converting `click`/`drag` commands into real `PlayerEvent`s
 through the same `window_to_movie_position` as physical input. Spreading the
 sequence across ticks is what makes sliders draggable from a script.
+
+The reader opens the FIFO read-write and never reopens it (2026-11-03). A
+read-only reader sees EOF when a writer closes and has to reopen; what a
+writer puts in the pipe between that EOF and the reopen is lost — 79 of 100
+burst lines arrived. Read-write, the open never waits and EOF never comes.
+
+Soft events (`event KIND VALUE [COMMENT]`, `extended_events.rs`) are the
+chumby player's `ExtendedEvents`: a global object whose nine members (the
+kinds the panel subscribes to, F2:5404-21919, F6:124) are `AsBroadcaster`
+objects. It is installed on the first native call — frame 2 polls `_bent`
+at F2:3395, before its first `addListener` at F2:9183. The control channel
+queues the event (`host::push_event`); the per-frame `_bent` poll drains the
+queue and calls each kind's `broadcastMessage("onEvent", VALUE, COMMENT)`,
+at the same point restart.rs uses because no panel function is half-way
+through there. An unknown kind is logged and dropped.
 
 A client-side attempt to hide the kiosk mouse cursor (`set_cursor_visible`)
 was implemented, deployed, and did nothing: with no pointer device entering

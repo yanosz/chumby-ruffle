@@ -50,6 +50,7 @@ Everything the fork adds is in `core/src/chumby/`:
 | `ui-policy.toml` | the rules themselves, compiled in with `include_str!` |
 | `audio.rs` | mpv backend over JSON IPC |
 | `input.rs` | control FIFO |
+| `extended_events.rs` | the panel's `ExtendedEvents` (soft events) |
 
 Upstream files carry registration hooks only. Every hook site has a comment
 containing the word `chumby`, so `grep -rn chumby <file>` finds what to
@@ -139,6 +140,8 @@ creates a regular file and the player disables the channel:
 echo bend            > /tmp/chumby-ctl   # summon/dismiss the button bar
 echo "click 448 458" > /tmp/chumby-ctl
 echo "drag 100 200 300 200" > /tmp/chumby-ctl
+echo "event WidgetPlayer nextWidget" > /tmp/chumby-ctl   # soft event
+echo "event UserPlayer play http://ice1.somafm.com/groovesalad-128-mp3" > /tmp/chumby-ctl
 ```
 
 `./verify-screens.sh` walks the panel to the alarms, My Streams and volume
@@ -402,7 +405,8 @@ Each of these cost real time.
   nothing (a WLAN drop, as TCP sees it): audio stops when the ~5 s demuxer
   cache drains, the process stays alive and *reports playing* for its 60 s
   default `--network-timeout`, then exits. `poll_state` sees nothing until
-  the exit. Live stall signals, if ever needed: `paused-for-cache` /
+  the exit. Since the reconnect options (2026-11-03, design §9) it
+  reconnects at the timeout instead of exiting — still 60 s of silence. Live stall signals, if ever needed: `paused-for-cache` /
   `core-idle` over the IPC socket. This is the failure mode the backup
   alarm (FR13) exists for.
 - **No audio device freezes stream-synced SWFs.** With no usable sound

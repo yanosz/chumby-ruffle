@@ -166,3 +166,29 @@ pub fn take_pointer() -> Option<PointerAction> {
         _ => None,
     }
 }
+
+/// A soft event for the panel's `ExtendedEvents` (extended_events.rs):
+/// `event KIND VALUE [COMMENT]` on the control channel, the chumby's
+/// `<event type= value= comment=>` line in `/tmp/flashplayer.event`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SoftEvent {
+    pub kind: String,
+    pub value: String,
+    pub comment: String,
+}
+
+static SOFT_EVENTS: Mutex<Vec<SoftEvent>> = Mutex::new(Vec::new());
+
+pub fn push_event(event: SoftEvent) {
+    if let Ok(mut q) = SOFT_EVENTS.lock() {
+        q.push(event);
+    }
+}
+
+/// All queued events, oldest first.
+pub fn take_events() -> Vec<SoftEvent> {
+    match SOFT_EVENTS.lock() {
+        Ok(mut q) => std::mem::take(&mut *q),
+        Err(_) => Vec::new(),
+    }
+}

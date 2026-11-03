@@ -26,8 +26,8 @@ for. Count in parentheses.
 | `core/src/avm1/fscommand.rs` | `swallow_fscommand_quit` guard | 2 |
 | `core/src/player.rs` | click-target diagnostic in `run_mouse_pick`; the same block stamps the last screen press (`restart.rs`) | 4 |
 | `core/Cargo.toml` | `toml`, target-gated `libc` | 3 |
-| `desktop/src/player.rs` | `ChumbyNavigator` wrap | 3 |
-| `desktop/src/cli.rs` | `--chumby-fixtures`, `--chumby-control`, `--renderer` | 6 |
+| `desktop/src/player.rs` | `ChumbyNavigator` wrap; `--background-color` set before the root movie loads | 5 |
+| `desktop/src/cli.rs` | `--chumby-fixtures`, `--chumby-control`, `--renderer`, `--background-color` (+ `parse_color`) | 8 |
 | `desktop/src/main.rs` | host init, `input::spawn` | 6 |
 | `desktop/src/app.rs` | Home→bend, touch arm, control-FIFO drain | 18 |
 

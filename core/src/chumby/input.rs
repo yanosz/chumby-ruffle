@@ -14,6 +14,11 @@
 //! restart-when-idle  quit once no audio alarm rings/snoozes and the screen
 //!             has been untouched for 60 s (restart.rs; the supervisor's)
 //! restart-cancel     withdraw that request
+//! event KIND VALUE [COMMENT]  a soft event: the panel's
+//!             ExtendedEvents.KIND listeners get onEvent(VALUE, COMMENT);
+//!             COMMENT is the rest of the line, spaces included, "" if
+//!             absent (extended_events.rs), e.g. `event WidgetPlayer
+//!             setWidget Yoga Basics`, `event MusicPlayer setVolume 30`
 //! ```
 //!
 //! Unknown commands are logged and ignored, so the protocol can grow with
@@ -53,19 +58,20 @@ pub fn spawn(fifo: Option<PathBuf>) {
 fn fifo_loop(path: &std::path::Path) {
     use std::os::unix::fs::FileTypeExt;
     loop {
-        // Opening a FIFO read-only blocks until a writer connects and
-        // returns EOF when it closes — reopen for the next writer.
-        match std::fs::File::open(path) {
+        // A regular file would replay its commands forever.
+        if let Ok(m) = std::fs::metadata(path) {
+            if !m.file_type().is_fifo() {
+                tracing::warn!(target: "chumby_host",
+                    "control path {path:?} is not a FIFO (mkfifo it); channel disabled");
+                return;
+            }
+        }
+        // Read-write: the open does not wait for a writer, and the reader
+        // never sees EOF (it counts as a writer itself). A read-only reader
+        // reopening after each writer loses whatever is written between its
+        // EOF and the reopen.
+        match std::fs::OpenOptions::new().read(true).write(true).open(path) {
             Ok(f) => {
-                match f.metadata() {
-                    // A regular file would replay its commands forever.
-                    Ok(m) if !m.file_type().is_fifo() => {
-                        tracing::warn!(target: "chumby_host",
-                            "control path {path:?} is not a FIFO (mkfifo it); channel disabled");
-                        return;
-                    }
-                    _ => {}
-                }
                 for line in std::io::BufReader::new(f).lines() {
                     let Ok(line) = line else { break };
                     handle(line.trim());
@@ -89,7 +95,7 @@ fn handle(command: &str) {
         "restart-when-idle" => super::restart::request(),
         "restart-cancel" => super::restart::cancel(),
         other => {
-            if !pointer_command(other) {
+            if !pointer_command(other) && !event_command(other) {
                 tracing::warn!(target: "chumby_host", "unknown control command {other:?}");
                 return;
             }
@@ -127,4 +133,67 @@ fn pointer_command(command: &str) -> bool {
         _ => return false,
     }
     true
+}
+
+/// Parse `event KIND VALUE [COMMENT]` and queue the soft event.
+fn event_command(command: &str) -> bool {
+    match parse_event(command) {
+        Some(event) => {
+            host::push_event(event);
+            true
+        }
+        None => false,
+    }
+}
+
+fn parse_event(command: &str) -> Option<host::SoftEvent> {
+    fn word(text: &str) -> (&str, &str) {
+        match text.split_once(char::is_whitespace) {
+            Some((w, rest)) => (w, rest.trim_start()),
+            None => (text, ""),
+        }
+    }
+    let (verb, rest) = word(command);
+    let (kind, rest) = word(rest);
+    let (value, comment) = word(rest);
+    if verb != "event" || kind.is_empty() || value.is_empty() {
+        return None;
+    }
+    Some(host::SoftEvent {
+        kind: kind.to_owned(),
+        value: value.to_owned(),
+        comment: comment.to_owned(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ev(kind: &str, value: &str, comment: &str) -> Option<host::SoftEvent> {
+        Some(host::SoftEvent {
+            kind: kind.into(),
+            value: value.into(),
+            comment: comment.into(),
+        })
+    }
+
+    #[test]
+    fn test_parse_event() {
+        assert_eq!(
+            parse_event("event WidgetPlayer nextWidget"),
+            ev("WidgetPlayer", "nextWidget", "")
+        );
+        assert_eq!(
+            parse_event("event WidgetPlayer setWidget Yoga  Basics"),
+            ev("WidgetPlayer", "setWidget", "Yoga  Basics")
+        );
+        assert_eq!(
+            parse_event("event MusicPlayer setVolume 30"),
+            ev("MusicPlayer", "setVolume", "30")
+        );
+        assert_eq!(parse_event("event NightMode"), None);
+        assert_eq!(parse_event("event"), None);
+        assert_eq!(parse_event("eventful WidgetPlayer nextWidget"), None);
+    }
 }

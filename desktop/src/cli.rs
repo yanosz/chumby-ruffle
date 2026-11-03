@@ -185,6 +185,12 @@ pub struct Opt {
     #[clap(long)]
     pub letterbox: Option<Letterbox>,
 
+    /// Stage background colour as RRGGBB (`#` optional), overriding the
+    /// movie's own; with `--letterbox off` it also fills the margins
+    /// (chumby-pi: black beside the panel's grey stage).
+    #[clap(long, value_parser(parse_color))]
+    pub background_color: Option<ruffle_core::Color>,
+
     /// Spoofs the root SWF URL provided to ActionScript.
     #[clap(long, value_parser)]
     pub spoof_url: Option<Url>,
@@ -270,6 +276,16 @@ fn parse_movie_file_or_url(path: &str) -> Result<Url, Error> {
 
 fn parse_duration_seconds(value: &str) -> Result<Duration, Error> {
     Ok(Duration::from_secs_f64(value.parse()?))
+}
+
+// chumby: the web player's `backgroundColor` syntax, minus its silent
+// zero for a bad digit.
+fn parse_color(value: &str) -> Result<ruffle_core::Color, Error> {
+    let hex = value.strip_prefix('#').unwrap_or(value);
+    if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(anyhow!("expected RRGGBB, got `{value}`"));
+    }
+    Ok(ruffle_core::Color::from_rgb(u32::from_str_radix(hex, 16)?, 255))
 }
 
 fn parse_align(value: &str) -> Result<StageAlign, Error> {

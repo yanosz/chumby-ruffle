@@ -47,7 +47,8 @@ All chumby code lives in `core/src/chumby/`:
 | `audio.rs` | plays audio through mpv |
 | `backup_alarm.rs` | the dead-man beep the chumby's `chumbalarmd` sounded when the panel missed an alarm |
 | `brightness.rs` | drives a real backlight (kernel sysfs, or an owner-configured executable) |
-| `input.rs` | feeds simulated bend-sensor and pointer input |
+| `input.rs` | feeds simulated bend-sensor and pointer input, and soft events |
+| `extended_events.rs` | the panel's `ExtendedEvents`: soft events reach its listeners |
 | `restart.rs` | quits when idle on the appliance supervisor's request |
 | `ui_policy.rs` | dims and disables panel controls the host platform can't support |
 | `music_sources.rs` | hides music sources the appliance cannot serve |
@@ -90,7 +91,8 @@ The fork maps that onto an **mpv** process it controls over a socket:
 play, pause, volume, and mute all become mpv commands, and playback
 state is reported back in the values the panel expects. If mpv isn't
 installed the player runs silently but otherwise works — the state
-machine still answers correctly.
+machine still answers correctly. An http(s) stream whose connection drops
+is reconnected rather than ended.
 
 ## Input
 
@@ -105,7 +107,20 @@ bend | tap           squeeze once and release
 bend down / bend up  hold / release
 click X Y            click at a point
 drag X1 Y1 X2 Y2     press, drag, release (for sliders)
+event KIND VALUE [COMMENT]   a soft event (below)
 ```
+
+The chumby's own services steered the panel with **soft events**: a line
+`<event type="KIND" value="VALUE" comment="COMMENT"/>` in
+`/tmp/flashplayer.event` and a SIGHUP to the player, which handed it to
+every listener the panel had registered with
+`ExtendedEvents.KIND.addListener` — "next widget", "night mode on",
+"play this URL", "volume 30". Here the same event arrives as
+`event KIND VALUE [COMMENT]` on the control channel; COMMENT is the rest of
+the line, spaces included (`event WidgetPlayer setWidget Yoga Basics`).
+The kinds the panel listens to: `WidgetPlayer`, `chumbrowser`,
+`ScreenManager`, `AlarmPlayer`, `MusicPlayer`, `FMRadio`, `UserPlayer`,
+`IntercomPlayer`, `NightMode`.
 
 Physical input maps onto the same actions: the Home key acts as a
 squeeze, and on a touchscreen a tap becomes a click while a short
@@ -157,6 +172,10 @@ responses it expects. `chumby-ctl bend` squeezes the (virtual) bend sensor
 to summon the control-panel bar. Useful log targets: `chumby_host` (all
 environment traffic), `chumby_audio`, and `chumby_pick` (a click-target
 diagnostic).
+
+`--background-color RRGGBB` forces the stage colour over the movie's own;
+with `--letterbox off` it is also what fills the window beside the stage
+(the panel's own colour is a dark grey, `333333`).
 
 ## Keeping up with upstream
 
@@ -265,7 +284,7 @@ the fork leaves category 4 alone.
 
 | idx | native | purpose / return | fixture behavior |
 |-----|--------|------------------|------------------|
-| 5,52 | `_backtick(cmd)` | synchronous shell execution → stdout as string | canned response from `fixtures/exec/manifest.txt` (longest command prefix wins); unknown commands log loudly and return `""`. Real semantics, not fixtures, for `rm /psp/ifalarm` (backup-alarm dismiss) and `…/scripts/enable_intro` / `disable_intro` (toggle `/psp/disable_intro` in the rootfs) |
+| 5,52 | `_backtick(cmd)` | synchronous shell execution → stdout as string | canned response from `fixtures/exec/manifest.txt` (longest command prefix wins); unknown commands log loudly and return `""`. Real semantics, not fixtures, for `rm /psp/ifalarm` (backup-alarm dismiss), `rm /tmp/musicsource` (`MusicPlayer.eraseSource`, on every stop) and `…/scripts/enable_intro` / `disable_intro` (toggle `/psp/disable_intro` in the rootfs) |
 
 (The asynchronous variant is the `exec://` URL scheme, answered from
 the same fixture store by `ChumbyNavigator`.)
@@ -369,7 +388,7 @@ PLAYING 2.
 | 5,141 | `_terminateAudioPlayer()` | kill the daemon | same as stop |
 | 5,142 | `_startAudioPlayer()` | start the daemon | stub — mpv is spawned per `_playAudio`, there is no daemon |
 | 5,143 | `_restartAudioPlayer()` | restart the daemon | stub, same reason |
-| 5,144 | `_playAudio(url, …)` | play a URL or file | spawns mpv at the current system volume; absolute chumby paths (e.g. `/usr/chumby/alarmtones/…`) resolve inside the rootfs |
+| 5,144 | `_playAudio(url, …)` | play a URL or file | spawns mpv at the current system volume; absolute chumby paths (e.g. `/usr/chumby/alarmtones/…`) resolve inside the rootfs; http(s) URLs get ffmpeg's reconnect options |
 | 5,145 | `_playAudioNext(url)` | cue the following track | stub |
 | 5,146 | `_playAudioLoopCount(n)` | loop count for the next `_playAudio` — alarms use it | stored, consumed by the next play |
 | 5,147 | `_skipAudioNext()` | skip forward in the playlist | stub |

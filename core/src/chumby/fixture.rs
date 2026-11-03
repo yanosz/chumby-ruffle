@@ -352,6 +352,13 @@ impl ChumbyHost for FixtureHost {
         if command == "reload_backup_alarm" {
             return Ok(Vec::new());
         }
+        // MusicPlayer.eraseSource (F2:13006), on every stop: the saved
+        // source must go, or what reads it (chumby-rust-remote's station
+        // mark) still names a stream after it stopped.
+        if command == "rm /tmp/musicsource" {
+            let _ = std::fs::remove_file(self.fs.root.join("tmp/musicsource"));
+            return Ok(Vec::new());
+        }
         // brightness_ctl mode: the settings screen opens the bright/dim
         // radio view only when hardware_version is not "3.8" (DS1748), and
         // setDim then calls _setLCDMute — 3.7 is the value that routes both
@@ -943,6 +950,19 @@ mod tests {
         host.exec("rm /psp/ifalarm; reload_backup_alarm").unwrap();
         assert!(!ifalarm.exists(), "dismissal must delete /psp/ifalarm");
 
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn test_erase_source_deletes_musicsource() {
+        let root = std::env::temp_dir()
+            .join(format!("chumby-fixture-erase-source-test-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("rootfs/tmp")).unwrap();
+        let host = FixtureHost::new(&root);
+        let f = root.join("rootfs/tmp/musicsource");
+        std::fs::write(&f, "<musicSource selector=\"user\" />").unwrap();
+        host.exec("rm /tmp/musicsource").unwrap();
+        assert!(!f.exists(), "eraseSource must delete /tmp/musicsource");
         std::fs::remove_dir_all(&root).ok();
     }
 

@@ -72,6 +72,8 @@ pub fn method<'gc>(
         ONPRESS_REMOVED.store(true, Ordering::Relaxed);
     }
 
+    // One-shot, before frame 2's first addListener (extended_events.rs).
+    super::extended_events::install(activation);
     // UI policy rides the native-call cadence (the panel polls _bent every
     // frame), re-applying idempotently so screen re-entry can't undo it.
     super::ui_policy::apply(activation);
@@ -88,9 +90,11 @@ pub fn method<'gc>(
     // only at the per-frame _bent poll, the first statement of
     // BendSensor.onEnterFrame (F2:3423). Inside other natives the alarm
     // flags can be half-updated: snoozeAlarm clears _alarmRinging before it
-    // sets _alarmSnoozing (F2:10973-10980).
+    // sets _alarmSnoozing (F2:10973-10980). Soft events wait for the same
+    // point.
     if index == 25 {
         super::restart::apply(activation);
+        super::extended_events::dispatch(activation);
     }
 
     let result = dispatch(activation, index, name, args, &host_args)?;

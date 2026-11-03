@@ -796,3 +796,84 @@ is, and the wrapped behaviours are hard to re-verify on the desktop.
 Verification: `cargo test -p ruffle_core --lib chumby`,
 `cargo test -p ruffle_render_tiny_skia`, debug build, movie start on the
 desktop (the CI check: alive at 45 s, `_getPlatform` in the log, no panic).
+
+---
+
+Number: 31
+Timestamp: 2026-11-03, 14:00
+Title: Soft events, a lossless control FIFO, stream reconnect, and a forced stage colour — the player half of chumby-pi issues 27 and 30.
+Status: done on dev, desktop-verified 2026-11-03; the Pi side (chumby-rust-remote writing the FIFO, the launcher's `--letterbox off --background-color 000000`) is chumby-pi work
+Description: chumby-rust-remote steers the hardware chumby's panel with soft
+events (`signal_soft_event.sh`: `<event type= value= comment=/>` appended to
+`/tmp/flashplayer.event`, SIGHUP to the player, the panel's
+`ExtendedEvents.KIND` listeners called with `onEvent(value, comment)`). The
+fork had none of it: `ExtendedEvents` was undefined, every `addListener`
+in the panel a silent no-op (F2:5404, 5412, 9160, 12192, 13057, 14436,
+16216, 21919; F6:124). On the Pi that left the widget drop-down, "Nacht"
+and the Lys radio dead (chumby-pi issues 27, 30).
+- `extended_events.rs`: the global `ExtendedEvents` with the nine kinds as
+  `AsBroadcaster` objects, installed on the first native call (frame 2
+  polls `_bent` at F2:3395, its first `addListener` is at F2:9183);
+  queued events dispatched at the per-frame `_bent` poll (restart.rs's
+  spot) as `broadcastMessage("onEvent", VALUE, COMMENT)`. No `__resolve`
+  factory for other kinds: nothing subscribes to one (grep over chumby-pi,
+  ikea-lys, the decompile); an unknown kind is logged and dropped.
+- `input.rs`: `event KIND VALUE [COMMENT]`, COMMENT the rest of the line
+  (spaces kept, `""` if absent); queue in `host.rs`
+  (`SoftEvent`, `push_event`/`take_events`). The FIFO is now opened
+  read-write once and never reopened: the read-only reader lost what was
+  written between a writer's close and its reopen (rust-remote side, a cat
+  loop: 79 of 100 burst lines).
+- `fixture.rs`: `rm /tmp/musicsource` (`MusicPlayer.eraseSource`, F2:13006,
+  every stop) really deletes the file; the manifest answered it with
+  `empty.txt`, so after a stop rust-remote's station mark
+  (rust-remote/src/main.rs:236) kept naming the stream.
+- `audio.rs`: http(s) URLs get
+  `--stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=10`
+  (design §9 has the measured behaviour and the one price).
+- `desktop/src/cli.rs` / `player.rs`: `--background-color RRGGBB` (`#`
+  optional; a bad digit is an error, unlike the web player's silent 0),
+  set on the stage before the root movie loads; a SetBackgroundColor tag
+  applies only while the stage has none (`movie_clip.rs:4517`), so neither
+  the panel nor a widget in its proxy overrides it. For `--letterbox off`,
+  where the whole window is cleared with the stage colour
+  (`core/src/player.rs:2074`): the panel's is `333333`.
+
+Desktop verification (debug build, `run-controlpanel.sh`, `/tmp/chumby-ctl`,
+a scratch two-widget `psp/profile.xml`; fixtures restored afterwards):
+- `event WidgetPlayer nextWidget` → `WidgetPlayer.widgetEvents.onEvent(
+  nextWidget,)`, Built In Clock loaded; `event WidgetPlayer setWidget Space
+  Clock` → `onEvent(setWidget,Space Clock)`, Space Clock loaded.
+- `event NightMode on` → `WidgetMode.night()`, night clock on screen,
+  `/tmp/nightmode` 1; `event NightMode off` → `exitNightMode`, widget back.
+- `event ScreenManager dim` → `ScreenManager.setDim(): 1`; `bright` → 0.
+- `event UserPlayer play http://ice1.somafm.com/groovesalad-128-mp3` →
+  `UserPlayer.playFile`, `/tmp/musicsource` `selector="user" label="User
+  http://…"`, mpv spawned with the reconnect options, playing (IPC
+  `playback-time` advancing, `core-idle` false).
+- `event MusicPlayer setVolume 30` → `_setSystemVolume(30)`, `/psp/volume`
+  30, mpv `volume` 30.0 over IPC (no player.toml, cap 100).
+- `event MusicPlayer stop` → `stopMusic`, `rm /tmp/musicsource` (file gone
+  — with the fixture fix), `_stopAudioPlayer`, no mpv left.
+- Burst: 5 × 20 lines, each its own `printf > fifo` → 100 of 100 handled;
+  one non-blocking write of three lines → all three; `bend` still works;
+  `event Foo bar` → "unknown kind"; `event NightMode` → unknown command.
+- `--letterbox off`, 1024×600, both renderers: margins `333333` without the
+  flag, `000000` with `--background-color 000000` (and `#000000`), before
+  and after a widget switch; inside the stage the control panel screen is
+  pixel-identical either way (the panel paints its own background).
+- Movie start: exit 124 at 45 s, `_getPlatform` logged, no panic.
+- Reconnect, plain mpv against a local real-time mp3 server behind a proxy
+  that breaks each connection after 5 s (scratch scripts): clean close —
+  without the options mpv exits at 5 s, with them it reconnects every 5 s
+  and plays on; TCP reset — the same; stall — without, exit at 65 s; with,
+  reconnect at 65 s and plays on; server gone — retries with backoff, exits
+  at 16 s; finite file with Content-Length or chunked — ends normally; a
+  finite file without either — repeats (the price above).
+Tests: `cargo test -p ruffle_core --lib chumby` 50 passed (new:
+`test_parse_event`, `test_reconnect_only_for_network_urls`,
+`test_erase_source_deletes_musicsource`); `cargo check --target
+aarch64-unknown-linux-gnu -p ruffle_desktop` clean. Not run: clippy and
+rustfmt (not installed for this toolchain); anything on the Pi.
+Seen, not investigated: after `setWidget` the control panel's widget
+counter read "11 of 2".

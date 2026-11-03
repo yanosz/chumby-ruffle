@@ -319,7 +319,11 @@ and says so in the log.
   `click X Y`, `drag X1 Y1 X2 Y2`, so the panel can be driven from a script
   over SSH. Pointer commands go through the same window→movie coordinate
   mapping as real input, one action per event-loop iteration (sliders need
-  the sequence spread across ticks).
+  the sequence spread across ticks). `event KIND VALUE [COMMENT]` raises a
+  soft event: what the chumby's services sent through
+  `/tmp/flashplayer.event` + SIGHUP reaches the panel's
+  `ExtendedEvents.KIND` listeners as `onEvent(VALUE, COMMENT)` (design §10).
+  The FIFO is held open read-write, so no line is lost between writers.
 
 ### FR13 — Backup alarm: the dead-man beep
 

@@ -29,6 +29,8 @@
 //! - `intro`: the INTRO button under localCache
 //! - `empty_channel`: an empty channel shows the built-in clock
 //! - `alarm_guard`: a silent alarm must not cancel a sounding one
+//! - `extended_events`: the soft events (`ExtendedEvents`) the chumby's
+//!   player raised, fed from the control channel
 
 pub mod alarm_guard;
 pub mod audio;
@@ -37,6 +39,7 @@ pub mod backup_alarm;
 pub mod brightness;
 pub mod config;
 pub mod empty_channel;
+pub mod extended_events;
 pub mod fixture;
 pub mod host;
 pub mod input;

@@ -41,6 +41,11 @@ pub struct AudioPlayer {
 
 const SOCKET_PATH: &str = "/tmp/chumby-mpv.sock";
 
+/// ffmpeg's http reconnect, so a dropped radio connection is re-opened
+/// instead of ending the stream (mpv exits, the panel sees Stopped). A
+/// stalled one still waits out mpv's 60 s `--network-timeout` first.
+const RECONNECT: &str = "--stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=10";
+
 /// How long `play()` waits for mpv's IPC socket. mpv needs ~150 ms to create
 /// it on a fast desktop — expect more on a Pi or a loaded machine. Only a
 /// broken-but-present mpv ever costs the full wait.
@@ -104,6 +109,9 @@ impl AudioPlayer {
         ]);
         if loops > 1 {
             cmd.arg(format!("--loop={loops}"));
+        }
+        if is_network_url(&path) {
+            cmd.arg(RECONNECT);
         }
         // Route to a specific output (e.g. the Pi's USB card) without
         // touching the system-wide ALSA default: the launcher sets
@@ -249,6 +257,11 @@ impl Drop for AudioPlayer {
     }
 }
 
+fn is_network_url(url: &str) -> bool {
+    let scheme = url.split_once("://").map(|(s, _)| s.to_ascii_lowercase());
+    matches!(scheme.as_deref(), Some("http" | "https"))
+}
+
 /// The first executable `mpv` on PATH.
 fn find_mpv() -> Option<PathBuf> {
     use std::os::unix::fs::PermissionsExt;
@@ -293,6 +306,14 @@ mod tests {
 
         let uncapped = AudioPlayer::new(PathBuf::from("/nonexistent"), 100.0);
         assert_eq!(uncapped.effective_volume(60.0), 60);
+    }
+
+    #[test]
+    fn test_reconnect_only_for_network_urls() {
+        assert!(is_network_url("http://ice1.somafm.com/groovesalad-128-mp3"));
+        assert!(is_network_url("HTTPS://example.com/a.mp3"));
+        assert!(!is_network_url("/home/jan/fixtures/rootfs/mnt/usb/a.mp3"));
+        assert!(!is_network_url("file:///mnt/usb/a.mp3"));
     }
 
     /// Integration test for the mpv audio backend: spawns mpv and plays a

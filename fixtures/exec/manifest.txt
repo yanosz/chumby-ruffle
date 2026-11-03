@@ -10,4 +10,3 @@ sync	empty.txt
 killall headphone_mgr	empty.txt
 mkdir /tmp/widgetcache	zero.txt
 nice -n 10 curl	empty.txt
-rm /tmp/musicsource	empty.txt
