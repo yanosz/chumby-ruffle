@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Static channel envelope, deliberately empty: every widget (the stock
+     clocks included) merges in from a local profile.xml (design §3). -->
+<profile id="1">
+  <name>chumbypi-channel</name>
+  <description/>
+  <user username="jan">
+    <profiles>
+      <profile unaccepted="0" name="chumbypi-channel" id="1"/>
+    </profiles>
+  </user>
+  <access access="private" id="1"/>
+  <widget_instances>
+  </widget_instances>
+</profile>
