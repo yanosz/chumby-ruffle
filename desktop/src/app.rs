@@ -32,7 +32,6 @@ struct MainWindow {
     modifiers: Modifiers,
     min_window_size: LogicalSize<u32>,
     max_window_size: PhysicalSize<u32>,
-    no_gui: bool,
     preferred_width: Option<f64>,
     preferred_height: Option<f64>,
     start_fullscreen: bool,
@@ -40,6 +39,16 @@ struct MainWindow {
     time: Instant,
     next_frame_time: Option<Instant>,
     event_loop_proxy: EventLoopProxy<RuffleEvent>,
+    /// chumby: active touch being watched for a long-press (stationary
+    /// ~1 s) that stands in for the bend-sensor squeeze.
+    chumby_touch: Option<ChumbyTouch>,
+}
+
+struct ChumbyTouch {
+    started: Instant,
+    start_pos: PhysicalPosition<f64>,
+    moved: bool,
+    bend_fired: bool,
 }
 
 impl MainWindow {
@@ -54,7 +63,9 @@ impl MainWindow {
                 }
 
                 self.gui.render(player);
-                plot_stats_in_tracy(&self.gui.descriptors().wgpu_instance);
+                if let Some(descriptors) = self.gui.descriptors() {
+                    plot_stats_in_tracy(&descriptors.wgpu_instance);
+                }
             }
 
             // Important that we return here, or we'll get a feedback loop with egui
@@ -164,6 +175,54 @@ impl MainWindow {
                 }
                 self.check_redraw();
             }
+            // chumby: touchscreen input. Wayland touch is not a
+            // pointer, and upstream ruffle_desktop ignores WindowEvent::Touch
+            // entirely. The panel's resistive screen is single-touch, so map
+            // every touch point to left-button mouse events.
+            WindowEvent::Touch(touch) => {
+                use ruffle_core::events::MouseButton as RuffleMouseButton;
+                use winit::event::TouchPhase;
+                /// Finger wobble tolerated before a hold stops counting as
+                /// a long-press (window pixels).
+                const LONG_PRESS_SLOP: f64 = 12.0;
+                self.mouse_pos = touch.location;
+                let (x, y) = self.gui.window_to_movie_position(touch.location);
+                self.player.handle_event(PlayerEvent::MouseMove { x, y });
+                match touch.phase {
+                    TouchPhase::Started => {
+                        self.chumby_touch = Some(ChumbyTouch {
+                            started: Instant::now(),
+                            start_pos: touch.location,
+                            moved: false,
+                            bend_fired: false,
+                        });
+                        self.player.handle_event(PlayerEvent::MouseDown {
+                            x,
+                            y,
+                            button: RuffleMouseButton::Left,
+                            index: None,
+                        });
+                    }
+                    TouchPhase::Moved => {
+                        if let Some(state) = self.chumby_touch.as_mut() {
+                            let dx = touch.location.x - state.start_pos.x;
+                            let dy = touch.location.y - state.start_pos.y;
+                            if dx * dx + dy * dy > LONG_PRESS_SLOP * LONG_PRESS_SLOP {
+                                state.moved = true;
+                            }
+                        }
+                    }
+                    TouchPhase::Ended | TouchPhase::Cancelled => {
+                        self.chumby_touch = None;
+                        self.player.handle_event(PlayerEvent::MouseUp {
+                            x,
+                            y,
+                            button: RuffleMouseButton::Left,
+                        });
+                    }
+                }
+                self.check_redraw();
+            }
             WindowEvent::MouseWheel { delta, .. } => {
                 if self.gui.is_context_menu_visible() {
                     return;
@@ -200,6 +259,20 @@ impl MainWindow {
             WindowEvent::KeyboardInput { event, .. } => {
                 if self.gui.is_context_menu_visible() {
                     return;
+                }
+
+                // chumby: the Home key plays the bend sensor (squeeze
+                // button); chumby's own falconwing port used the same key.
+                // Level alone is not enough: the panel polls _bent once
+                // per frame (~83 ms), and a crisp tap on a GPIO button is
+                // shorter — press and release can both fall between two
+                // polls and vanish. Latch a tap on the press edge too;
+                // the level still carries hold semantics.
+                if event.logical_key == Key::Named(NamedKey::Home) {
+                    if event.state == ElementState::Pressed && !event.repeat {
+                        ruffle_core::chumby::host::tap_bend();
+                    }
+                    ruffle_core::chumby::set_bent(event.state == ElementState::Pressed);
                 }
 
                 // Handle escaping from fullscreen.
@@ -253,11 +326,7 @@ impl MainWindow {
     }
 
     fn on_metadata(&mut self, swf_header: HeaderExt) {
-        let height_offset = if self.gui.window().fullscreen().is_some() || self.no_gui {
-            0.0
-        } else {
-            MENU_HEIGHT as f64
-        };
+        let height_offset = self.gui.menu_height();
 
         // To prevent issues like waiting on resize indefinitely (#11364) or desyncing the window state on Windows,
         // do not resize while window is maximized.
@@ -367,6 +436,49 @@ impl MainWindow {
                 }
                 _ => {}
             }
+        }
+
+        // chumby: a touch held stationary for ~1 s acts as
+        // the bend-sensor squeeze (toggles the control panel). Checked here
+        // because a resting finger produces no further touch events.
+        if let Some(state) = self.chumby_touch.as_mut() {
+            if !state.bend_fired
+                && !state.moved
+                && state.started.elapsed() >= std::time::Duration::from_millis(1000)
+            {
+                state.bend_fired = true;
+                ruffle_core::chumby::host::tap_bend();
+            }
+        }
+
+        // chumby: simulated pointer input from the control channel
+        // (`click X Y` / `drag X1 Y1 X2 Y2` in window pixels — matches grim
+        // screenshots). One action per iteration so widgets that track the
+        // pointer across frames (sliders) see a natural sequence.
+        if let Some(action) = ruffle_core::chumby::take_pointer() {
+            use ruffle_core::chumby::PointerAction;
+            use ruffle_core::events::MouseButton as RuffleMouseButton;
+            let button = RuffleMouseButton::Left;
+            let ((wx, wy), down, up) = match action {
+                PointerAction::Move(x, y) => ((x, y), false, false),
+                PointerAction::Down(x, y) => ((x, y), true, false),
+                PointerAction::Up(x, y) => ((x, y), false, true),
+            };
+            let (x, y) = self
+                .gui
+                .window_to_movie_position(winit::dpi::PhysicalPosition::new(wx, wy));
+            self.player.handle_event(PlayerEvent::MouseMove { x, y });
+            if down {
+                self.player.handle_event(PlayerEvent::MouseDown {
+                    x,
+                    y,
+                    button,
+                    index: None,
+                });
+            } else if up {
+                self.player.handle_event(PlayerEvent::MouseUp { x, y, button });
+            }
+            self.check_redraw();
         }
 
         // Core loop
@@ -504,7 +616,7 @@ impl ApplicationHandler<RuffleEvent> for App {
             let mut player = PlayerController::new(
                 event_loop_proxy.clone(),
                 window.clone(),
-                gui.descriptors().clone(),
+                gui.descriptors().cloned(),
                 font_database,
                 preferences.clone(),
                 gui.file_picker(),
@@ -537,7 +649,6 @@ impl ApplicationHandler<RuffleEvent> for App {
                 player,
                 min_window_size,
                 max_window_size,
-                no_gui,
                 preferred_width,
                 preferred_height,
                 start_fullscreen,
@@ -548,6 +659,7 @@ impl ApplicationHandler<RuffleEvent> for App {
                 time: Instant::now(),
                 next_frame_time: None,
                 event_loop_proxy,
+                chumby_touch: None,
             });
         }
     }
