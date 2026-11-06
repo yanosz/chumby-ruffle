@@ -1,6 +1,13 @@
 //! CPU-only `tiny-skia` render backend: the appliance's default rasterizer,
 //! chosen because a direct 2D rasterizer beats wgpu-on-lavapipe on CPU load
-//! by an order of magnitude (`claude/tiny-skia-backend-plan.md`).
+//! by an order of magnitude — the panel rasterised offscreen on a Pi 3B+ at
+//! 320x240 in ~3.95 ms/frame single-threaded against lavapipe's ~92 ms on
+//! two threads (measured 2026-07-26).
+//!
+//! `set_viewport_dimensions` reallocates the pixmap to the viewport, so the
+//! panel rasterises at the display's resolution, not the movie's 320x240;
+//! rendering at stage size and letting the compositor upscale is an open
+//! lever (lavapipe's own curve was 640x480 193 ms, 480x320 123, 320x240 92).
 //!
 //! Non-goals, all stubbed unsupported: alpha masks, blend-mode compositing,
 //! filters, offscreen bitmap caching, PixelBender, Context3D.

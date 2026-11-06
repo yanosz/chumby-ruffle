@@ -103,7 +103,7 @@ chumby-player` shows nothing at all from the player.
 Number: 3
 Timestamp: 2026-08-20, 22:10
 Title: The built-in clock renders without digits.
-Status: closed 2026-10-20 (housekeeping, Jan) — was: cause found, fixed in the appliance build (chumby-pi issue 6); awaiting a rebuilt deb on the box. Full record: claude/clock-digits-plan.md
+Status: closed 2026-10-20 (housekeeping, Jan) — was: cause found, fixed in the appliance build (chumby-pi issue 6); awaiting a rebuilt deb on the box.
 Description: With no widgets installed the panel falls back to its own
 built-in clock (FR17, the empty-channel -> bi_clock path from #26). On the
 new box — Pi 3B+, Waveshare 5" DSI panel at 1024x600, chumby-player 0.9.3,
@@ -117,7 +117,7 @@ is the first panel above 640x480 used in this project, so the stage is scaled
 further than on anything tested before — worth checking whether the digits
 come back at a smaller mode.
 
-Triaged 2026-08-20 (plan and full findings: `claude/clock-digits-plan.md`).
+Triaged 2026-08-20.
 The digits are not text: each strip is an 11-frame sprite whose frames 2-11
 hold one solid-fill `DefineShape` per digit, in the same colour as the colon
 next to them, and `setDigit(d)` is `gotoAndStop(d + 2)` — so a backend that

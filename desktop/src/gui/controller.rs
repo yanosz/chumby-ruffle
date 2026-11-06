@@ -55,8 +55,10 @@ enum Present {
     /// A wgpu surface with the egui GUI composited over the movie.
     Wgpu(Box<WgpuPresent>),
     /// tiny-skia's pixmap copied into a shared-memory buffer — no Vulkan and
-    /// no GUI overlay. Cheap enough to matter on the chumby's hardware
-    /// (claude/tiny-skia-backend-plan.md step 1).
+    /// no GUI overlay. Cheap enough to matter on the chumby's hardware: the
+    /// alternative, uploading the pixmap as a wgpu texture each frame, would
+    /// keep the surface and egui but also keep lavapipe loaded, spending an
+    /// unknown slice of the win on a software-Vulkan upload and blit.
     Software(Box<SoftwarePresent>),
 }
 
