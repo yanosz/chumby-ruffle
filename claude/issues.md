@@ -1,6 +1,10 @@
-# Open issues
+# Issues
 
-One block per issue: Number, Timestamp, Title, Status, Description.
+One block per open issue: Number, Timestamp, Title, Status, Description.
+Player-side issues only; appliance issues live in chumby-pi's
+`claude/issues.md`. Settled issues are one line each in the register at the
+end — the full blocks are in git history, named there. Numbers are never
+reused.
 
 ---
 
@@ -97,46 +101,6 @@ The crate logs through the `log` facade while the desktop player installs a
 `tracing_subscriber` registry writing through `tracing_appender::non_blocking`;
 the records land in **`/home/pi/.cache/ruffle/log/ruffle.log`**. `journalctl -u
 chumby-player` shows nothing at all from the player.
-
----
-
-Number: 3
-Timestamp: 2026-08-20, 22:10
-Title: The built-in clock renders without digits.
-Status: closed 2026-10-20 (housekeeping, Jan) — was: cause found, fixed in the appliance build (chumby-pi issue 6); awaiting a rebuilt deb on the box.
-Description: With no widgets installed the panel falls back to its own
-built-in clock (FR17, the empty-channel -> bi_clock path from #26). On the
-new box — Pi 3B+, Waveshare 5" DSI panel at 1024x600, chumby-player 0.9.3,
-CHUMBY_RENDERER=tiny-skia, CHUMBY_QUALITY=low — the clock shows no digits.
-Not reproduced on the desktop and not narrowed at all yet.
-Two cheap probes first, in this order. (1) `CHUMBY_RENDERER=wgpu` in
-/etc/default/chumby-player, one restart: if the digits appear, this is a
-tiny-skia text/glyph gap and joins issue 2's fidelity findings; if they are
-missing there too, the renderer is not the cause. (2) The geometry: 1024x600
-is the first panel above 640x480 used in this project, so the stage is scaled
-further than on anything tested before — worth checking whether the digits
-come back at a smaller mode.
-
-Triaged 2026-08-20.
-The digits are not text: each strip is an 11-frame sprite whose frames 2-11
-hold one solid-fill `DefineShape` per digit, in the same colour as the colon
-next to them, and `setDigit(d)` is `gotoAndStop(d + 2)` — so a backend that
-draws the colon cannot fail on the digits, and probe (1) above is not the
-discriminating test it looked like. Probe (2) is also answered: the desktop
-player at `--renderer tiny-skia --quality low --width 1024 --height 600`
-draws the clock complete. What the device shows *besides* the digits is what
-separates the remaining causes; that question is CHECKPOINT 2 in the plan.
-
-Cause (2026-08-20): not the player. The deb's `ruffle_desktop` was built in
-the same cargo invocation as `exporter`, which asks `ruffle_core` for
-`deterministic`; cargo unifies features, so `locale::get_current_date_time()`
-was frozen at 2001-02-03 04:05:06 (and `default_font` with it — the leak
-was two features; see chumby-pi issue 6 for the font consequence). Frozen seconds mean `BuiltinClock.update()`
-runs exactly once — from the constructor, before the digit strips are
-class-linked — so all six `setDigit` calls no-op and the strips stay blank,
-while `clockFormat` is still undefined there and the 24-hour branch clears
-`ampm`. February, no digits and no a.m./p.m. are one fault. Fixed in
-chumby-pi `0049563`.
 
 ---
 
@@ -337,61 +301,6 @@ DSI box's sink at 100 % after Jan found the output weak).
 
 ---
 
-Number: 7
-Timestamp: 2026-08-26, 17:00
-Title: No network was reported as a fabricated Ethernet page.
-Status: closed 2026-10-20 (housekeeping, Jan) — was: fixed on dev 2026-08-26 — device verification outstanding (Jan)
-Description: With no default route every reader in `real_net.rs` returned
-`None` and the call fell through to `fixtures/exec/`, which answered
-`type="lan" ip="192.168.1.50" gateway="192.168.1.1"`, MAC
-`00:11:22:33:44:55`, and `<wifi connected="1" linkquality="100"
-signalstrength="100"/>`. Jan hit it after taking the 5" DSI box off LAN
-before wifi came up: the Info screen showed an Ethernet at full signal with
-a mock address, and no mention of WLAN. Same lie as the I3 hardcoding
-(chumby-pi memory "status page: derive from live state"), reached through
-the fallback instead of a constant, and in the one state nobody had tested.
-
-The panel already had the protocol and the words for this, which is why the
-fix needed no UI work:
-- `gotNetworkStatus` (F2:294) reads `childrenOfType("error")` inside
-  `<interface>`; any error child sets `Object._chumby.hasNetwork = false`
-  and NO field is copied.
-- `InfoPanel.loadInfo` (F2:27192) wraps type/ssid/ip/netmask/gateway/dns and
-  the `signal_strength` call in `if (hasNetwork)`, with an `else` that prints
-  the translated **"network: not connected"** (F2:27253).
-
-Fix: the three network touchpoints now always answer from code and can no
-longer reach a fixture — `NO_NETWORK`
-(`<network><interface><error/></interface></network>`) when there is no
-connected interface, `NO_WIFI` (`<wifi connected="0"/>`) with no route or a
-wired one. `macgen.sh` no longer depends on a route at all (the Info screen
-prints the MAC outside the has-network branch, so a fake would sit right
-above "not connected"): default-route interface first, else the first
-non-loopback interface with a non-zero address, else an empty line. Their
-three fixture files and manifest lines are deleted, so no path can serve
-them; `desktop/src/main.rs:194` is the only host construction site and
-always wraps `FixtureHost`, so nothing else consumed them.
-
-Why the fixture files could not be the fix on their own:
-`chumby-player-run:135` seeds `$STATE/fixtures` only `if [ ! -d ]`, so an
-upgrade never replaces an existing tree — an owner's box (Jan's, seeded
-2026-08-24) would have kept the lying XML.
-
-Tests: `network_xml` for wired and for wireless (ssid escaping included),
-the no-network answer against the panel's error protocol, and `mac()`
-asserted never to be the old fixture value. The no-network test fails
-against the previous code, which was the point.
-
-Not fixed here, same class, recorded for the audit: `chumby_version -s`
-(1.7.2) and `-f` (1830) are canned values shown on the Info screen with no
-real source; `_headphonesIn`, `_dcVolts`, `_powerSource` and
-`_accelerometer` answer with literal constants (`fixture.rs:160-171`). The
-levers `_getPlatform` "ironforge" and `chumby_version -h` "3.8" are
-deliberate (`brightness.rs:5` selects the slider UI from the latter) and not
-part of this class.
-
----
-
 Number: 8
 Timestamp: 2026-08-27, 09:00
 Title: With no network the local widget channel does not load (since 0.9.4).
@@ -413,484 +322,122 @@ local channel that works offline needs investigation before any code, and the
 options considered so far were either too broad or unverifiable without a
 device. Deliberately left open (Jan, 2026-08-27).
 
-
 ---
 
-Number: 9
-Timestamp: 2026-08-27, 20:15
-Title: tiny-skia painted every `EditText` border as a filled black box.
-Status: closed — fixed and verified on the desktop, both renderers, 2026-08-27
-Description: Jan, at the 5" DSI box: the custom-alarm wizard's "Name this
-alarm" step shows a black box where the name field should be. Reproduced on
-the desktop with the same build: `--renderer tiny-skia` draws a black band
-across the full stage width, ~85 px tall, swallowing the field and the CLEAR
-button beside it; `--renderer wgpu` draws the field correctly. The appliance
-runs tiny-skia (`CHUMBY_RENDERER`), the desktop defaults to wgpu
-(`cli.rs:158`), which is why it never showed here.
-
-Cause: the field is `DefineEditText` chid 1102 (`textStr` in
-`DefineSprite_1104` = `AlarmPanelSetName`), flags `05 29` — `Border=1`,
-`UseOutlines=1`. So the core takes `EditText::draw_text_box` and emits
-`draw_line_rect` for the border (`edit_text.rs:2956`) with
-`Matrix::create_box(width, height, …)`, which carries the box *size* in the
-matrix's linear part. The backend stroked a unit square with
-`Stroke::default()` (width 1.0) under that matrix, and tiny-skia strokes in
-path space and transforms afterwards (`painter.rs:433`: `path.stroke(…)` then
-`fill_path(…, transform, …)`). The 1 px border was therefore multiplied by the
-box dimensions: at 2x viewport scale the ~228x22 field yields ~456 px-thick
-vertical edges and ~44 px-thick horizontal ones — full stage width, ~88 px
-tall, matching the observed band.
-
-Flash's rule is the opposite, and upstream states it at `edit_text.rs:2850`:
-"line width of the border is always 1px regardless of zoom and transform."
-wgpu obeys it with a hardware line primitive and, where the adapter has none,
-falls back to `ruffle_render::lines::emulate_line_rect`
-(`wgpu/src/surface/commands.rs:875`) — a backend-independent helper that
-builds four 1 px rects from already-transformed corners. The fix routes our
-`draw_line_rect` through the same helper; it lands on our `draw_rect`, which
-was already correct. `render/tiny_skia/tests/render.rs`
-(`line_rect_border_stays_one_pixel_thick`) pins a 1 px frame with a clear
-interior, and fails against the old code.
-
-Consumer list — every bordered `EditText` in the panel. All 398
-`DefineEditText` tags were decoded; exactly five carry `Border=1`, and all
-five have identical `hasFont=1 / useOutlines=1`, so all five take the same
-`draw_text_box` → `draw_line_rect` path:
-
-| chid | screen | verdict |
-|---|---|---|
-| 1102 | `AlarmPanelSetName` — "Name this alarm" | the report; verified fixed on screen, and live (typing updates the text inside a 1 px frame) |
-| 549 | `ssidEntry` / WEP-key keypad in `DefineSprite_552` | verified fixed on screen ("Enter name of access point"); reachable only with the `settings-network` ui-policy rule lifted, which was a throwaway probe build, since reverted |
-| 597 | `IPEntry` (`DefineSprite_598`) | verified fixed on screen via `SlimServerPanel` (chid 1233), reached with `enable_lyrion = 1`; its other host, the manual-IP frames of `DefineSprite_612`, needs a real association and stays unreachable |
-| 1275, 1276 | `MP3tunesPanelLogin` account/password | same flags, same code path; the screen needs chumby.com and was not reached |
-
-`draw_line` was examined and left alone. Its callers put the line's thickness
-on an axis the matrix scales by 1.0 — `create_box(width, 1.0, …)` for the
-horizontal edges, and `create_box_with_rotation(1.0, height, PI/2, …)` for the
-vertical ones, where the rotation moves the thickness onto the `1.0` axis
-(`edit_text.rs:2874-2905`, `render_underline` at 1367) — so it never produced
-the artifact. It does differ from wgpu by the half-pixel offset wgpu adds
-(`commands.rs:862`); switching it to `emulate_line` would settle that too, but
-that is a separate call and nothing is known to be broken by it.
-
----
-
-Number: 10
-Timestamp: 2026-09-01, 11:00
-Title: A silent alarm cancelled a sounding one — deliberate deviation from stock.
-Status: won't fix 2026-11-03 (Jan) — the guard is removed, stock behaviour kept: "this exists on the chumby, too. We do not need to deviate"; and Jan: "the guard didn't work"; the removal ships in 0.9.10. Was: closed 2026-10-20 (housekeeping) — fixed on dev 2026-09-01, A/B-verified on the desktop, device-verified 2026-09-24 (chumby-pi issue 13).
-Description: `Alarm.ringAlarm` (F2:11178) opens with
-`_alarmSet.stopAlarmsExcept(this)`, and `stopAlarmsExcept` (F2:12039) calls
-`stopAlarm(true)` on every *other* ringing alarm. An alarm with `type="none"`
-(`Alarm.TYPE_NONE`, F2:10170) makes no sound at all — its whole ringAlarm
-branch is `doPreAction` → `stopAlarm(false)` (F2:11187-11191), the shape a
-nightmode alarm has — yet it runs that cancel first. Two alarms a minute
-apart and the silent one wins: on chumby-pi-3 a `"Daily at 8:00"` nightmode
-alarm killed a stream alarm that had been ringing since 07:59 (measured on
-the device 2026-09-01, full evidence in chumby-pi `claude/issues.md` #13).
-
-The guard exists to keep two *sounding* alarms from overlapping. An alarm
-that makes no sound has nothing to protect, so `alarm_guard.rs` wraps
-`AlarmSet.prototype.stopAlarmsExcept` — one-shot with retry until frame 2
-defines it, the original parked at `__chumby_stopAlarmsExcept`, surgery
-precedent `empty_channel.rs`. When the argument's `_type` is `"none"` the
-wrapper logs and returns; every other call delegates unchanged. Wired at
-`avm.rs` beside the other one-shots. **No upstream file is touched, so
-`patch-surface.md` is unchanged.**
-
-Wrapped here rather than at the `ringAlarm` call site because the ringing
-alarm passes *itself* as `anAlarm` — canceller and survivor are the same
-object on the only reachable path — while wrapping `ringAlarm` would mean
-either reimplementing its 50-line body or shadowing `stopAlarmsExcept` with
-a no-op and restoring it, where a missed restore disables cancelling for
-every alarm. Consumer list for `stopAlarmsExcept`, all four sites: F2:11182
-`Alarm.ringAlarm(this)` — the path that bites; F2:12033 `AlarmSet.step`'s
-periodic reload, F2:12238 and F2:12244 `AlarmSet.gotEvent` — all pass
-`undefined` (so they fail the `_type` test anyway) and are unreachable on our
-stack, the reload interval being `ONE_YEAR` without the `alarmReloadInterval`
-FlashVar (F2:11784) and `ExtendedEvents.AlarmPlayer` (F2:12182) never driven.
-Outside the decompile there is no consumer: the fork's Rust names `AlarmSet`
-only in two `fixture.rs` comments about the backup-alarm exec protocol.
-
-**This is a deliberate deviation from stock chumby behaviour**, chosen by Jan
-over the configuration-only workaround (move the nightmode alarm out of the
-wake alarm's ring window) and over leaving it alone. Nothing else in the
-silent alarm's ring changes: night mode off, widget mode, the
-`post_alarm_action` probes, its own `stopAlarm` and `saveAlarms` all still
-run.
-
-Verified on the desktop, same binary with the guard compiled out and in, two
-`when="once"` alarms a minute apart — the earlier `type="beep"
-auto_dismiss="0"`, the later `type="none" action="nightmode"
-auto_dismiss="1"`:
-
-    guard off  10:37:00.036  AlarmSet.stopAlarmsExcept(): cancelling … 10:36 am
-               10:37:00.037  Alarm.stopAlarm() … 10:36 am isCancel:true
-               10:37:00.037  Alarm.restoreSoundSettings(): volume:60
-    guard on   10:41:00.043  silent alarm "Daily at 8:00" rang — not cancelling
-               10:41:00.044  Alarm.doPrePostAction(): night mode off
-               10:41:00.046  Alarm.restoreDisplay():  - alarm still playing,
-                             continuing
-
-With the guard the surviving alarm is never mentioned again after it rings,
-and the panel's own `restoreDisplay` acknowledges it — stock code already
-handles a survivor correctly.
-
-Side effect examined and dismissed: without the cancel, `_alarmRefCount` ends
-at 0 rather than −1. That counter is written at four sites (F2:11783 init,
-12057 `++`, 12062 `--`, 12068 snooze) and **never read as a condition**
-anywhere in the decompile; its only consumers are the three `trace()` strings
-that print it. It is already asymmetric on stock — `Alarm.ringAlarm` calls
-`_alarmSet.ringAlarm` only on the two sounding branches (F2:11203, 11225)
-while `Alarm.stopAlarm` (F2:10994) decrements unconditionally — so a silent
-alarm drives it negative on a real chumby too.
-
-Also observed and not part of this fix: the cancel used to run
-`Alarm.restoreSoundSettings()`, which is why a manual restart after a
-cancelled alarm played at the pre-alarm volume (44 → 16 on the device). Moot
-now for silent cancellers.
-
-
-Device-verified 2026-09-24 on chumby-pi-3 (0.9.8): audio alarm 20:01 on a
-stream, silent nightmode alarm 20:02 — `silent alarm "Guard test silent"
-rang — not cancelling ringing alarms`, no `stopAlarmsExcept(): cancelling`,
-the stream played on to the audio alarm's own end; full trace in chumby-pi
-`claude/issues.md` #13. Also noted there: the TYPE_NONE branch's
-unbalanced `_alarmRefCount` decrement, stock and inert (never read).
-
-2026-11-03 (Jan): won't fix — a silent night-mode alarm cancelling a
-sounding one is the chumby's own behaviour, so the fork keeps it; and in
-use the guard did not do its job (Jan's observation, no trace taken).
-Removed on dev: `core/src/chumby/alarm_guard.rs`, its `pub mod` and the
-doc line in `mod.rs`, the `apply` call in `avm.rs`, the README table row.
-`patch-surface.md` was never touched by the guard, so it stays as it is;
-the mentions in issues 22 and 30 and in chumby-pi's `watchdog-plan.md`
-are history. The configuration-only workaround — keep the nightmode alarm
-out of a wake alarm's ring window — is what remains, as on a chumby.
----
-
-Number: 22
-Timestamp: 2026-09-10, 19:57
-Title: Sony Dash panel support — parked on the sony-dash branch.
-Status: parked — the fork side of steps 1-4 done, step 5 not started
-Description: The Dash player work is on branch `sony-dash`, tip `0ea50a70b`
-(pushed to origin); dev was rewound to `75f3acf28`, and the appliance repo's
-dev to `e7aa3ee`, so the Pi appliance work continues without the Dash tree in
-the way. On that branch and nowhere else: `claude/dash-panel-survey.md`,
-`fixtures-dash/`, `run-dash.sh`, the bounded-mask work in
-`render/tiny_skia/src/lib.rs`, and issues 11-21 — so numbers 11-21 are
-reserved here and must not be reused on dev. The plan and its checkpoints live
-in the appliance repo (`claude/sony-dash-panel-plan.md`, also branch-only),
-its issue 18 is the counterpart of this block, and its Dash appliance issues
-are 14-17.
-Open on that branch, both wanting the DSI box: issue 20 (brightness via
-`ChumbyNative._setLCDBrightness`, native 5,22, never reaches the backlight on
-platform `yume` — `display/ScreenManager.as:296-304`) and issue 21 (the issue-10
-silent-alarm cancel is probably unguarded on the Dash, `alarm_guard.rs` binds
-by the classic's signature).
-Untracked and in git nowhere, left in this worktree by the step-4 session:
-`fixtures-dash/rootfs/psp/guid` and `fixtures-dash/rootfs/psp/theme.swf` (the
-Dash theme asset — do not commit an extracted SWF).
-
-UPDATE 2026-10-10: resumed. `sony-dash` is rebased onto dev in both repos —
-the tips above are gone from the branch and kept as
-`sony-dash-before-rebase-20261010`; read the branch, not a hash. Issue 21 is
-accepted as a known issue (Jan: it concerns the real chumby devices too) and
-no longer gates step 5; issue 20 is fixed in this run, before the deploy.
-
----
-
-Number: 23
-Timestamp: 2026-09-10, 20:40
-Title: The backlight scale wastes its whole range above 25 %.
-Status: closed 2026-10-20 (housekeeping, Jan) — was: fixed in the player — the value itself wants a look on the box
-Description: On the 5" DSI panel (`10-0045`, `max_brightness` 255) Jan runs
-day brightness at 7.2 and night/dim at 1.5 out of the panel's 0-100, i.e. duty
-18 and 4 — the useful range is the bottom 2 % of the scale, and that is also
-its coarsest part: one panel unit is 655.35 raw (F2:9119
-`setRawBrightness` → `int(v × 655.35)`) = 2.55 duty steps, so a pixel of
-slider travel jumps several steps where he needs single ones.
-
-Fix: `brightness_cap`, a percent in `player.toml` (config.rs), shipped as an
-active `25` in `fixtures/player.toml.example` — the file `build-debs.sh:48`
-installs as the appliance conffile. `Backlight` stores `max_brightness × cap`
-(brightness.rs:79-90) and `set_raw` scales the panel's 0-65535 linearly onto
-it, keeping the ≥1 floor so no "on" position turns the screen off. Panel 100 %
-now reaches duty 64 and the slider's travel spreads over it: four times the
-resolution down low, which is where this panel lives.
-
-Consumers checked: `fixture.rs:597-603` (the sole `set_raw` caller, the
-`/proc/sys/sense1/brightness` interception) unchanged; `fixture.rs:78` passes
-the cap at detection; `ui_policy.rs:242` `brightness_available` untouched — a
-cap is not availability; `brightness_ctl`'s discrete 0/1/2 path is not scaled
-and says so in the template. The Dash's own route (native 5,22, issue 20) is
-unimplemented and must land on the same cap.
-
-A cap so small that `max × cap` rounds below one step warns at detection and
-leaves a switch, not a dimmer.
-
-Still to do: deploy and let Jan judge 25 %. The panel's two settings files are
-in panel space and untouched, so today's levels move — day 7.2 → duty 5,
-night 1.5 → duty 1; reproducing today's brightness means roughly 29 and 6 on
-the sliders.
-
----
-
-Number: 24
-Timestamp: 2026-09-10, 22:05
-Title: The volume ceiling is too high, and the master is not the only fader.
-Status: closed 2026-10-20 (housekeeping, Jan) — was: fixed by config — the 50 % value is Jan's to judge on the box
-Description: Jan's rule for the appliance: every stage at unity, the panel's
-slider the single master, capped at half. `volume_cap` (FR14, config.rs) is
-already that scale — `audio.rs:69-74` `effective_volume` = panel × cap / 100,
-linear, applied to mpv's `volume` at spawn (`--volume=`) and over IPC on every
-change; panel space and `/psp/volume` keep an honest 0-100. Only its shipped
-value changed, 100 → 50 in `fixtures/player.toml.example`.
-
-Audited on chumby-pi-3 the same evening, everything else already at unity:
-ALSA `PCM` 100 % on card 0 (Headphones) and card 1 (the USB dongle, the
-default sink); both PipeWire sinks `vol: 1.00`; SWF audio unity (the desktop
-CLI's `--volume` defaults to 1, `desktop/src/cli.rs:118`, and the launcher
-passes none); the backup-alarm Klaxon 100 (`backup_alarm.rs:34`), which
-ignores the cap by design. Nothing to change in any of them.
-
-The backup-alarm Klaxon now obeys the cap too (Jan, same evening), reversing
-the FR13 exemption: `BackupAlarm::start` carries `volume_cap`
-(`fixture.rs:95`), `tone_volume(knob, cap)` scales
-`/psp/backup_alarm_volume` (default 100) by it, and the log line prints both
-halves. Consequence to keep in view: the appliance's still-owed on-device
-check — "is the Klaxon loud enough to wake someone" (appliance
-requirements.md, backup-alarm row) — is now being asked of a tone at half
-scale. `claude-docs/requirements.md` FR13 and the `volume_cap` row here were
-corrected; they still said the tone was exempt.
-
-Panel-side on the box: `/psp/volume` 32 → 100 and `/psp/alarm_volume` 44 → 100
-(the shipped seed is already 100), so the slider starts at the top of the new
-scale and alarms are not quieter than the master.
-
----
-
-Number: 25
-Timestamp: 2026-09-24, 10:30
-Title: A forward step of the wall clock leaves every enabled alarm dead until restart.
-Status: closed 2026-10-20 (housekeeping, Jan) — was: remedied outside the player — the appliance supervisor restarts the panel on a clock step > 15 s (chumby-pi `claude/watchdog-plan.md`); the player's part is issue 27
-Description: Measured on chumby-pi-3 — the appliance record is chumby-pi
-issue 21. The player started with the clock 5 d 15 h slow (no RTC; NTP stepped
-it later), and both enabled daily alarms have logged
-`rings in -544945 seconds, at:Thu Sep 17 08:00:00` ever since.
-
-The panel's own logic, unpatched: `Alarm.startAlarm` (F2:10868) fixes
-`_alarmTime` once, via `computeNextAlarmTimeDaily` (F2:10805) relative to
-`new Date()` at that moment. `Alarm.step` (F2:10897) rings only while
-`now - _alarmTime` is in `[0, RING_WINDOW]` (F2:10910, 15000 ms at F2:10186),
-and a new time is computed only after a ring. A step past the window leaves
-the alarm outside it for good. The only panel path that would re-arm — the
-periodic reload in `AlarmSet.step` — is `ONE_YEAR` without the
-`alarmReloadInterval` FlashVar (F2:11784; see issue 10's consumer table).
-
-Unrelated to issue 10: no alarm reaches `ringAlarm`, so `alarm_guard.rs` never
-runs.
-
-Remedy candidate if the player side is chosen (appliance issue 21, option B):
-detect a wall-clock step against monotonic time and recompute `_alarmTime` for
-every enabled alarm. Consumer list for `_alarmTime`, `startAlarm` and
-`computeNextAlarmTime*` still to be made before any change.
-
----
-
-Number: 26
-Timestamp: 2026-09-24, 10:50
-Title: The panel's WLAN display cannot tell a usable link from a loud one.
-Status: closed 2026-10-20 (housekeeping, Jan) — was: display unchanged; mitigated by the appliance — NetworkManager's connectivity check plus a panel restart when connectivity returns, which refreshes the boot-time snapshot (chumby-pi `claude/watchdog-plan.md`)
-Description: Player side of chumby-pi issue 22 (WLAN shown as good, not
-usable; no log survived). How each field is produced:
-
-- `signal_strength` exec → `RealNetHost::signal_strength_xml`
-  (`real_net.rs:75`): default-route interface from `/proc/net/route`; if it
-  is wireless, `/proc/net/wireless` `link` rescaled 0-70 → percent
-  (`parse_proc_wireless`, `real_net.rs:263`). cfg80211's wext compat derives
-  that `link` from the station signal alone (signal + 110 dBm, clamped to
-  −110…−40) — consistent with the captured sample, 63 at −47 dBm
-  (`real_net.rs:370`); the kernel formula itself is not re-read here.
-  `connected="1"` needs only the wireless default route and a
-  `/proc/net/wireless` line; the status column, gateway and DNS are not read.
-- Polling: `WifiIndicator` every `FRAME_COUNT = 60` frames (F2:8076, loop at
-  F2:8065); the Info screen calls `ChumbyNative.backtick("signal_strength")`
-  on each open (F2:27226). Both live.
-- `network_status.sh` (F2:286) runs once, from the boot chain
-  (`gotMacAddress` → `fetchNetworkStatus`, F2:253); `gotNetworkStatus`
-  (F2:294) fills `Object._chumby.ip/netmask/gateway/nameserver1/2/
-  networkType/ssid` and nothing refreshes them. The Info screen prints those.
-- The panel's only reachability probe is `NetworkStatus.checkStatus`
-  (F2:9696), `exec://wget -T 10 … crossdomain.xml; echo $?`, driven only by
-  `WidgetPlayer.checkNetworkStatus` in `beAClock` (F2:5357). `RealNetHost`
-  has no handler for it; what the fixture host answers was not checked.
-
----
-
-Number: 27
-Timestamp: 2026-09-24, 14:30
-Title: restart-when-idle — the player yields to the appliance supervisor.
-Status: closed 2026-10-20 (housekeeping, Jan) — was: built and desktop-verified; the supervisor that sends it is chumby-pi work (watchdog plan, step 3c)
-Description: The appliance's new supervisor (chumby-pi
-`claude/watchdog-plan.md`, D4) restarts the panel on a clock step or when
-connectivity returns, but must not while an audio alarm rings or snoozes,
-nor within 60 s of a screen press. That decision is taken in the player,
-where the state lives, so no alarm can start between check and kill.
-
-`core/src/chumby/restart.rs`: control-FIFO verbs `restart-when-idle` and
-`restart-cancel` (`input.rs`); the last press stamped in the existing
-chumby block of `run_mouse_pick` (`core/src/player.rs`, covers mouse,
-touch and FIFO clicks; a long-press counts, a bend does not — Jan); the
-panel's own flags read from `AlarmSet.alarmSet._alarms[i]` — `_type`
-(`"none"` never holds), `_alarmRinging`, `_alarmSnoozing` (F2:11779,
-11230-11236); quit through `invoke_fs_command("quit")`, exit 0 (a
-dedicated exit code would need a `desktop/src/main.rs` hook — Jan accepted
-0, the supervisor knows it asked).
-
-Found during verification, fixed: checked inside every native call, the
-request was granted in the middle of `Alarm.snoozeAlarm`, which clears
-`_alarmRinging` and sets `_alarmSnoozing` a few statements later
-(F2:10973-10980) and calls natives in between — the player quit at the
-snooze. `apply` now runs only at the per-frame `_bent` poll (index 25), the
-first statement of the top-level `BendSensor.onEnterFrame` (F2:3421-3429),
-where no panel function is half-way through.
-
-Desktop runs (release build, tiny-skia, scratch fixtures, 2026-09-24):
-- idle: request → `panel idle — quitting` 50 ms later, exit 0;
-- press: `click`, request → held ("screen pressed less than 60 s ago");
-  `restart-cancel` → still running 69 s after the press; new request →
-  quit within 61 ms;
-- alarm: a one-shot beep alarm rings, request → held ("audio alarm");
-  bend → snooze, still held for the snooze minute; re-ring, still held;
-  TURN OFF ALARM clicked → held by the press; quit exactly 60 s after it,
-  exit 0.
-Not run separately: a ringing `type="none"` alarm — it auto-dismisses
-inside `ringAlarm`, and the `_type` test excludes it.
-
----
-
-Number: 30
-Timestamp: 2026-10-20, 20:30
-Title: Housekeeping — the fork half of chumby-pi issue 25.
+Number: 32
+Timestamp: 2026-11-06, 10:30
+Title: Housekeeping — the fork half of chumby-pi issue 33.
 Status: done
-Description: Jan's housekeeping pass (chumby-pi `claude/issues.md` #25)
-reached the fork on 2026-10-20, artifacts and code, decided in interview:
-- `CLAUDE.md.old` deleted (the old rule set: PRs, a cargo feature).
-- `render/tiny_skia/examples/{demo,present_probe}.rs` and their
-  dev-dependencies deleted: spike-era probes, superseded by the shipped
-  present path in `desktop/src/gui/controller.rs`. `tiny_skia_export` stays
-  as the offscreen A/B renderer (compare both renderers before a verdict).
-- `chumby.yml` runs on a push to `chumby` and on dispatch only; no pull
-  requests exist, the trigger and its guards were dead.
-- `audio.rs`: mpv is found by a PATH walk, not by shelling out to `which`
-  (Rust over shell); the mpv integration test is `#[ignore]` (it plays a
-  tone) and looks for the fixtures at `<fork>/fixtures`, not three levels
-  up a layout that no longer exists — it had always skipped.
-- `config.rs`: the access_chumby_com warning no longer claims registration
-  is unimplemented.
-- `mod.rs` and README list every module; both point rebasers at
-  `claude/patch-surface.md` (re-checked today, unchanged) instead of the
-  frozen design §8. The tiny-skia crate no longer calls itself a spike;
-  `SpikeStats` is `FrameStats`.
-- Branches: `chumby-regen`, `chumby-regen-095`, `chumby-regen-2026-09-29`,
-  `regress/upstream-0706` deleted locally, `sony-dash-before-rebase-20261010`
-  locally and on origin. `chumby-before-regen-*` and `chumby-old` stay:
-  chumby-pi's release history pins fork commits that live only there.
-  `sony-dash` stays as a reference (issue 22 / chumby-pi 18: stale).
-- Issues 3, 7, 10, 23-27 closed (Jan); 1, 2, 4, 5, 6, 8 stay open.
-- clippy: clean for `core/src/chumby/` and `render/tiny_skia/`.
-Not done, by choice: folding the prototype-surgery boilerplate shared by
-intro.rs, empty_channel.rs and alarm_guard.rs into a helper — readable as
-is, and the wrapped behaviours are hard to re-verify on the desktop.
-Verification: `cargo test -p ruffle_core --lib chumby`,
-`cargo test -p ruffle_render_tiny_skia`, debug build, movie start on the
-desktop (the CI check: alive at 45 s, `_getPlatform` in the log, no panic).
+Description: Jan's housekeeping pass (chumby-pi `claude/issues.md` #33, which
+holds the decisions) reached the fork on 2026-11-06. `claude/` now holds two
+files: this register and `patch-surface.md`, re-checked and unchanged.
+- The three finished plan documents are deleted (4bc40bd89, 843 lines):
+  `tiny-skia-render-backend-plan.md` (the frozen spike record),
+  `tiny-skia-backend-plan.md` (all six steps DONE) and
+  `clock-digits-plan.md` (the record of issue 3). The frozen `claude-docs`
+  mention tiny-skia nowhere, so the two design facts that lived only in the
+  forward plan moved into the code they describe: the measured spike numbers
+  and the viewport-vs-stage lever into `render/tiny_skia/src/lib.rs`, and why
+  the present path is shared memory rather than a wgpu blit into
+  `desktop/src/gui/controller.rs`. Comments only — `cargo check -p
+  ruffle_render_tiny_skia` and `-p ruffle_desktop` both clean.
+- This file: 896 lines of blocks became the register below, one line per
+  settled issue (Jan: no exceptions), and issue 22's Dash pointer went with
+  them. Open and unchanged: 1, 2, 4, 5, 6, 8.
+- Issues closed in this pass: none. The register records what was already
+  settled; issues 23-27 and 3, 7, 10 were adjudicated in the 2026-10-20 pass
+  (issue 30), and 30 and 31 were done when they were written.
 
 ---
 
-Number: 31
-Timestamp: 2026-11-03, 14:00
-Title: Soft events, a lossless control FIFO, stream reconnect, and a forced stage colour — the player half of chumby-pi issues 27 and 30.
-Status: done on dev, desktop-verified 2026-11-03, verified on chumby-pi-3 (chumby-pi issues 27, 30); shipped in 0.9.9 (released 2026-11-03)
-Description: chumby-rust-remote steers the hardware chumby's panel with soft
-events (`signal_soft_event.sh`: `<event type= value= comment=/>` appended to
-`/tmp/flashplayer.event`, SIGHUP to the player, the panel's
-`ExtendedEvents.KIND` listeners called with `onEvent(value, comment)`). The
-fork had none of it: `ExtendedEvents` was undefined, every `addListener`
-in the panel a silent no-op (F2:5404, 5412, 9160, 12192, 13057, 14436,
-16216, 21919; F6:124). On the Pi that left the widget drop-down, "Nacht"
-and the Lys radio dead (chumby-pi issues 27, 30).
-- `extended_events.rs`: the global `ExtendedEvents` with the nine kinds as
-  `AsBroadcaster` objects, installed on the first native call (frame 2
-  polls `_bent` at F2:3395, its first `addListener` is at F2:9183);
-  queued events dispatched at the per-frame `_bent` poll (restart.rs's
-  spot) as `broadcastMessage("onEvent", VALUE, COMMENT)`. No `__resolve`
-  factory for other kinds: nothing subscribes to one (grep over chumby-pi,
-  ikea-lys, the decompile); an unknown kind is logged and dropped.
-- `input.rs`: `event KIND VALUE [COMMENT]`, COMMENT the rest of the line
-  (spaces kept, `""` if absent); queue in `host.rs`
-  (`SoftEvent`, `push_event`/`take_events`). The FIFO is now opened
-  read-write once and never reopened: the read-only reader lost what was
-  written between a writer's close and its reopen (rust-remote side, a cat
-  loop: 79 of 100 burst lines).
-- `fixture.rs`: `rm /tmp/musicsource` (`MusicPlayer.eraseSource`, F2:13006,
-  every stop) really deletes the file; the manifest answered it with
-  `empty.txt`, so after a stop rust-remote's station mark
-  (rust-remote/src/main.rs:236) kept naming the stream.
-- `audio.rs`: http(s) URLs get
-  `--stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=10`
-  (design §9 has the measured behaviour and the one price).
-- `desktop/src/cli.rs` / `player.rs`: `--background-color RRGGBB` (`#`
-  optional; a bad digit is an error, unlike the web player's silent 0),
-  set on the stage before the root movie loads; a SetBackgroundColor tag
-  applies only while the stage has none (`movie_clip.rs:4517`), so neither
-  the panel nor a widget in its proxy overrides it. For `--letterbox off`,
-  where the whole window is cleared with the stage colour
-  (`core/src/player.rs:2074`): the panel's is `333333`.
+## The register of settled issues
 
-Desktop verification (debug build, `run-controlpanel.sh`, `/tmp/chumby-ctl`,
-a scratch two-widget `psp/profile.xml`; fixtures restored afterwards):
-- `event WidgetPlayer nextWidget` → `WidgetPlayer.widgetEvents.onEvent(
-  nextWidget,)`, Built In Clock loaded; `event WidgetPlayer setWidget Space
-  Clock` → `onEvent(setWidget,Space Clock)`, Space Clock loaded.
-- `event NightMode on` → `WidgetMode.night()`, night clock on screen,
-  `/tmp/nightmode` 1; `event NightMode off` → `exitNightMode`, widget back.
-- `event ScreenManager dim` → `ScreenManager.setDim(): 1`; `bright` → 0.
-- `event UserPlayer play http://ice1.somafm.com/groovesalad-128-mp3` →
-  `UserPlayer.playFile`, `/tmp/musicsource` `selector="user" label="User
-  http://…"`, mpv spawned with the reconnect options, playing (IPC
-  `playback-time` advancing, `core-idle` false).
-- `event MusicPlayer setVolume 30` → `_setSystemVolume(30)`, `/psp/volume`
-  30, mpv `volume` 30.0 over IPC (no player.toml, cap 100).
-- `event MusicPlayer stop` → `stopMusic`, `rm /tmp/musicsource` (file gone
-  — with the fixture fix), `_stopAudioPlayer`, no mpv left.
-- Burst: 5 × 20 lines, each its own `printf > fifo` → 100 of 100 handled;
-  one non-blocking write of three lines → all three; `bend` still works;
-  `event Foo bar` → "unknown kind"; `event NightMode` → unknown command.
-- `--letterbox off`, 1024×600, both renderers: margins `333333` without the
-  flag, `000000` with `--background-color 000000` (and `#000000`), before
-  and after a widget switch; inside the stage the control panel screen is
-  pixel-identical either way (the panel paints its own background).
-- Movie start: exit 124 at 45 s, `_getPlatform` logged, no panic.
-- Reconnect, plain mpv against a local real-time mp3 server behind a proxy
-  that breaks each connection after 5 s (scratch scripts): clean close —
-  without the options mpv exits at 5 s, with them it reconnects every 5 s
-  and plays on; TCP reset — the same; stall — without, exit at 65 s; with,
-  reconnect at 65 s and plays on; server gone — retries with backoff, exits
-  at 16 s; finite file with Content-Length or chunked — ends normally; a
-  finite file without either — repeats (the price above).
-Tests: `cargo test -p ruffle_core --lib chumby` 50 passed (new:
-`test_parse_event`, `test_reconnect_only_for_network_urls`,
-`test_erase_source_deletes_musicsource`); `cargo check --target
-aarch64-unknown-linux-gnu -p ruffle_desktop` clean. Not run: clippy and
-rustfmt (not installed for this toolchain); anything on the Pi.
-Seen, not investigated: after `setWidget` the control panel's widget
-counter read "11 of 2".
-Update 2026-11-03 (release 0.9.9, Jan): ships as is — no clippy pass, the
-"11 of 2" counter stays seen, not investigated. In chumby-pi the launcher
-passes `--letterbox off --background-color 000000` and the socket allows
-only with the stick hook on (`CHUMBY_USB_HOOK=1`). Before the pair
-regeneration: `cargo test -p ruffle_core --lib chumby` 50 passed, 1 ignored;
-movie start (debug, CI's command line, headless cage, scratch fixtures):
-exit 124, `_getPlatform` 1, `panicked` 0.
+One line each: the outcome, and where the result lives. The full blocks — with
+their hardware traces, consumer tables and decompile line numbers — were last
+present in 4bc40bd89. Numbers 11-21, 28 and 29 belong to the Dash (see #22)
+and are not reused.
+
+- **#3** The built-in clock renders without digits (closed 2026-10-20): not
+  the player. The deb's `ruffle_desktop` had been built in the same cargo
+  invocation as `exporter`, so `ruffle_core` resolved `deterministic` and the
+  clock was frozen at 2001-02-03 — frozen seconds mean `BuiltinClock.update()`
+  runs once, before the digit strips are class-linked, and all six park blank.
+  Fixed on the appliance side (chumby-pi #6).
+- **#7** No network was reported as a fabricated Ethernet page (closed
+  2026-10-20): the three network touchpoints now always answer from code and
+  can no longer reach a fixture — `NO_NETWORK`
+  (`<network><interface><error/></interface></network>`) with no connected
+  interface and `NO_WIFI` (`<wifi connected="0"/>`) with no route or a wired
+  one, which is the panel's own protocol (`gotNetworkStatus` F2:294,
+  `InfoPanel.loadInfo` F2:27192 printing "network: not connected"). The lying
+  fixture files and their manifest lines are deleted. `macgen.sh` no longer
+  needs a route. Still canned on the Info screen, recorded for the audit:
+  `chumby_version -s`/`-f`, `_headphonesIn`, `_dcVolts`, `_powerSource`,
+  `_accelerometer`.
+- **#9** tiny-skia painted every `EditText` border as a filled black box
+  (closed 2026-08-27): the backend stroked a unit square under a matrix
+  carrying the box size, so a 1 px border scaled with the field. Flash's rule
+  is the opposite — "line width of the border is always 1px regardless of zoom
+  and transform" — so `draw_line_rect` now goes through
+  `ruffle_render::lines::emulate_line_rect`, as wgpu's fallback does, and
+  `line_rect_border_stays_one_pixel_thick` pins it. All five bordered
+  `DefineEditText` chids (1102, 549, 597, 1275, 1276 — the only five of 398
+  with `Border=1`) take that one path. `draw_line` was examined and left
+  alone.
+- **#10** A silent alarm cancelled a sounding one (won't fix 2026-11-03 —
+  Jan: "this exists on the chumby, too. We do not need to deviate", and the
+  guard did not do its job in use): `alarm_guard.rs` and its wiring are
+  removed again; the removal ships in 0.9.10. `patch-surface.md` was never
+  touched by the guard. What remains is the configuration workaround — keep a
+  nightmode alarm out of a wake alarm's ring window (appliance #13).
+- **#22** Sony Dash panel support (parked): everything Dash lives on the
+  `sony-dash` branch of both repos and nowhere else — `fixtures-dash/`,
+  `run-dash.sh`, the bounded-mask work, and issues 11-21, 28 and 29. Step 5
+  was never started. Read the branch, not an entry.
+- **#23** The backlight scale wasted its range above 25 % (closed
+  2026-10-20): `brightness_cap`, a percent in `player.toml`, shipped active at
+  25; `Backlight` stores `max_brightness × cap` and `set_raw` scales the
+  panel's 0-65535 onto it, keeping the ≥1 floor. A cap so small that
+  `max × cap` rounds below one step warns at detection.
+- **#24** The volume ceiling was too high (closed 2026-10-20): `volume_cap`
+  shipped at 50 instead of 100, and the backup-alarm Klaxon brought under it,
+  reversing the FR13 exemption. Every stage below the slider was already at
+  unity. The consequence to keep in view: the appliance's never-done "is the
+  Klaxon loud enough to wake someone" check now applies to a tone at half
+  scale.
+- **#25** A forward step of the wall clock leaves every enabled alarm dead
+  (closed 2026-10-20): remedied outside the player — the appliance supervisor
+  restarts the panel on a step > 15 s. The panel fixes `_alarmTime` once in
+  `Alarm.startAlarm` (F2:10868) and rings only inside `RING_WINDOW`
+  (F2:10910), and its one re-arming path is `ONE_YEAR` without the
+  `alarmReloadInterval` FlashVar. Appliance #21.
+- **#26** The panel's WLAN display cannot tell a usable link from a loud one
+  (closed 2026-10-20): display unchanged, mitigated by the appliance.
+  `signal_strength` is the station signal rescaled from `/proc/net/wireless`;
+  the Info screen's IP, netmask, gateway, DNS and SSID come from
+  `network_status.sh` once in the boot chain (F2:253, 294) and nothing
+  refreshes them. Appliance #22, where the cause is still open.
+- **#27** restart-when-idle — the player yields to the supervisor (closed
+  2026-10-20): `core/src/chumby/restart.rs`, control-FIFO verbs
+  `restart-when-idle` and `restart-cancel`, held while an audio alarm rings or
+  snoozes or the screen was pressed within 60 s, quit through
+  `invoke_fs_command("quit")` with exit 0. Applied only at the per-frame
+  `_bent` poll, because granting it mid-native once quit the player inside
+  `Alarm.snoozeAlarm`.
+- **#30** Housekeeping, the fork half of chumby-pi #25 (done 2026-10-20): the
+  spike-era render examples and `CLAUDE.md.old` deleted, `chumby.yml` reduced
+  to push-and-dispatch, mpv found by a PATH walk instead of `which`, `mod.rs`
+  and README listing every module and pointing rebasers at
+  `claude/patch-surface.md`, the tiny-skia crate no longer calling itself a
+  spike. Not done by choice: folding the prototype-surgery boilerplate of
+  `intro.rs` and `empty_channel.rs` into a helper.
+- **#31** Soft events, a lossless control FIFO, stream reconnect and a forced
+  stage colour (done, shipped in 0.9.9): `extended_events.rs` gives the panel
+  its nine `ExtendedEvents` listener kinds, dispatched at the per-frame `_bent`
+  poll; `input.rs` takes `event KIND VALUE [COMMENT]`; the control FIFO is
+  held open read-write and never reopened, which is what stopped it losing
+  lines (79 of 100 in a burst before, 100 of 100 after); `rm
+  /tmp/musicsource` really deletes the file; http(s) streams get mpv's
+  reconnect options; `--background-color RRGGBB` is set before the root movie
+  loads, for `--letterbox off`. Seen and not investigated: after `setWidget`
+  the widget counter read "11 of 2".
